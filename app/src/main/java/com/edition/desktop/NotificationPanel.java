@@ -1,9 +1,13 @@
 package com.edition.desktop;
 
 import android.content.Context;
+import android.graphics.Color;
+import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.view.Gravity;
+import android.view.PointerIcon;
 import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -16,18 +20,23 @@ import java.util.List;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
-/** Centro de ações, à direita: botões de estado, som, brilho e notificações recentes. */
+/**
+ * Centro de ações, à direita: botões de estado (Wi-Fi, Bluetooth, localização), volume e brilho,
+ * e a lista de notificações recentes. Tudo o que mostra é lido do sistema ao abrir e ao atualizar.
+ */
 final class NotificationPanel {
 
-    /** Botão de estado (Wi-Fi, Bluetooth, localização): azul quando ligado. */
+    /** Botão de estado: o cartão, o círculo com o ícone e o texto de estado (para os atualizar). */
     private static final class Tile {
         final LinearLayout view;
+        final FrameLayout circle;
         final ImageView icon;
         final TextView state;
 
-        /** Guarda as vistas de um botão de estado, para o poder atualizar mais tarde. */
-        Tile(LinearLayout view, ImageView icon, TextView state) {
+        /** Guarda as vistas de um botão de estado, para as poder atualizar mais tarde. */
+        Tile(LinearLayout view, FrameLayout circle, ImageView icon, TextView state) {
             this.view = view;
+            this.circle = circle;
             this.icon = icon;
             this.state = state;
         }
@@ -46,39 +55,48 @@ final class NotificationPanel {
     private final SeekBar brightness;
     private final TextView volumeLabel;
     private final TextView brightnessLabel;
+    private final TextView countPill;
+    private final ScrollView scroll;
     private final LinearLayout list;
     private final LinearLayout permission;
     private String lastSignature = NO_SIGNATURE;
     private boolean draggingVolume;
     private boolean draggingBrightness;
 
-    /** Constrói o centro de ações (escondido): botões de estado, volume, brilho e lista de notificações. */
+    /**
+     * Constrói o centro de ações (escondido): cabeçalho, botões de estado, cartão de controlos,
+     * lista de notificações com deslocamento e o pedido de acesso (quando falta).
+     */
     NotificationPanel(Launcher launcher) {
         this.launcher = launcher;
         this.context = launcher.activity();
 
         root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(14), dp(12), dp(14), dp(12));
-        root.setBackground(Ui.box(Ui.SURFACE, dp(14), dp(1), Ui.STROKE));
+        root.setPadding(dp(16), dp(14), dp(16), dp(14));
+        root.setBackground(Ui.box(Ui.SURFACE, dp(18), dp(1), Ui.STROKE));
+        root.setElevation(dp(18));
         root.setClickable(true);
         root.setVisibility(View.GONE);
 
-        // Cabeçalho.
+        // Cabeçalho: rótulo pequeno, título e fechar.
         LinearLayout header = new LinearLayout(context);
         header.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titles = new LinearLayout(context);
         titles.setOrientation(LinearLayout.VERTICAL);
-        titles.addView(Ui.text(context, "Centro de ações", 12, Ui.MUTED, false));
-        titles.addView(Ui.text(context, "Notificações", 20, Ui.TEXT, true));
+        TextView kicker = Ui.text(context, "Centro de ações", 11, Ui.MUTED, true);
+        kicker.setAllCaps(true);
+        titles.addView(kicker);
+        titles.addView(Ui.text(context, "Ações rápidas", 18, Ui.TEXT, true));
         header.addView(titles, new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
         header.addView(Ui.iconButton(context, "ic_close", v -> launcher.closePanels()),
-                new LinearLayout.LayoutParams(dp(44), dp(44)));
-        root.addView(header, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+                new LinearLayout.LayoutParams(dp(42), dp(42)));
+        LinearLayout.LayoutParams headerParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+        headerParams.bottomMargin = dp(12);
+        root.addView(header, headerParams);
 
-        // Botões de estado.
+        // Botões de estado: três cartões iguais em linha.
         LinearLayout tiles = new LinearLayout(context);
-        tiles.setPadding(0, dp(8), 0, dp(8));
         wifi = tile(tiles, "Wi-Fi", v -> {
             launcher.system().toggleWifi();
             root.postDelayed(this::refresh, 700);
@@ -90,91 +108,121 @@ final class NotificationPanel {
         location = tile(tiles, "Localização", v -> launcher.system().locationSettings());
         root.addView(tiles, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-        // Som.
+        // Cartão dos controlos: volume e brilho, um por linha.
+        LinearLayout controls = new LinearLayout(context);
+        controls.setOrientation(LinearLayout.VERTICAL);
+        controls.setPadding(dp(12), dp(10), dp(12), dp(10));
+        controls.setBackground(Ui.box(Ui.RAISED, dp(16), 0, 0));
+
         LinearLayout volumeRow = new LinearLayout(context);
         volumeRow.setGravity(Gravity.CENTER_VERTICAL);
         muteIcon = new ImageView(context);
-        muteIcon.setPadding(dp(8), dp(8), dp(8), dp(8));
-        muteIcon.setBackground(Ui.ripple(context));
+        muteIcon.setPadding(dp(9), dp(9), dp(9), dp(9));
+        muteIcon.setBackground(Ui.box(Ui.FIELD, dp(12), 0, 0));
         muteIcon.setClickable(true);
+        Ui.pointer(muteIcon, PointerIcon.TYPE_HAND);
         muteIcon.setOnClickListener(v -> {
             launcher.system().toggleMute();
             refresh();
         });
-        volumeRow.addView(muteIcon, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        volumeRow.addView(muteIcon, new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout volumeBox = new LinearLayout(context);
         volumeBox.setOrientation(LinearLayout.VERTICAL);
         LinearLayout volumeHead = new LinearLayout(context);
-        volumeHead.addView(Ui.text(context, "Volume", 13, Ui.TEXT, false),
+        volumeHead.setGravity(Gravity.CENTER_VERTICAL);
+        volumeHead.addView(Ui.text(context, "Volume", 13, Ui.TEXT, true),
                 new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
-        volumeLabel = Ui.text(context, "", 12, Ui.MUTED, false);
+        volumeLabel = valuePill();
         volumeHead.addView(volumeLabel);
         volumeBox.addView(volumeHead);
-        volume = slider(volumeBox, 100, new SeekBar.OnSeekBarChangeListener() {
+        volume = slider(volumeBox, new SeekBar.OnSeekBarChangeListener() {
+            /** Atualiza o valor e aplica o volume enquanto o utilizador arrasta. */
             @Override
             public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 if (fromUser) launcher.system().setVolume(progress);
                 volumeLabel.setText(progress + "%");
             }
 
+            /** Marca que o utilizador começou a arrastar, para não redesenhar o controlo a meio. */
             @Override
             public void onStartTrackingTouch(SeekBar bar) {
                 draggingVolume = true;
             }
 
+            /** Marca o fim do arrasto e volta a sincronizar com o valor real do sistema. */
             @Override
             public void onStopTrackingTouch(SeekBar bar) {
                 draggingVolume = false;
             }
         });
         volumeRow.addView(volumeBox, new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
-        root.addView(volumeRow, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+        controls.addView(volumeRow, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-        // Brilho.
+        View divider = new View(context);
+        divider.setBackgroundColor(Ui.STROKE);
+        LinearLayout.LayoutParams dividerParams = new LinearLayout.LayoutParams(MATCH_PARENT, dp(1));
+        dividerParams.setMargins(dp(52), dp(8), 0, dp(8));
+        controls.addView(divider, dividerParams);
+
         LinearLayout brightnessRow = new LinearLayout(context);
         brightnessRow.setGravity(Gravity.CENTER_VERTICAL);
         ImageView sun = new ImageView(context);
         sun.setImageDrawable(Icons.feature(context, "ic_light_mode"));
-        sun.setPadding(dp(8), dp(8), dp(8), dp(8));
-        brightnessRow.addView(sun, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        sun.setPadding(dp(9), dp(9), dp(9), dp(9));
+        sun.setBackground(Ui.box(Ui.FIELD, dp(12), 0, 0));
+        brightnessRow.addView(sun, new LinearLayout.LayoutParams(dp(40), dp(40)));
         LinearLayout brightnessBox = new LinearLayout(context);
         brightnessBox.setOrientation(LinearLayout.VERTICAL);
         LinearLayout brightnessHead = new LinearLayout(context);
-        brightnessHead.addView(Ui.text(context, "Brilho", 13, Ui.TEXT, false),
+        brightnessHead.setGravity(Gravity.CENTER_VERTICAL);
+        brightnessHead.addView(Ui.text(context, "Brilho", 13, Ui.TEXT, true),
                 new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
-        brightnessLabel = Ui.text(context, "", 12, Ui.MUTED, false);
+        brightnessLabel = valuePill();
         brightnessHead.addView(brightnessLabel);
         brightnessBox.addView(brightnessHead);
-        brightness = slider(brightnessBox, 100, new SeekBar.OnSeekBarChangeListener() {
+        brightness = slider(brightnessBox, new SeekBar.OnSeekBarChangeListener() {
+            /** Atualiza o valor e aplica o brilho enquanto o utilizador arrasta. */
             @Override
             public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 if (fromUser) launcher.system().setBrightness(progress);
                 brightnessLabel.setText(progress + "%");
             }
 
+            /** Marca que o utilizador começou a arrastar, para não redesenhar o controlo a meio. */
             @Override
             public void onStartTrackingTouch(SeekBar bar) {
                 draggingBrightness = true;
             }
 
+            /** Marca o fim do arrasto e volta a sincronizar com o valor real do sistema. */
             @Override
             public void onStopTrackingTouch(SeekBar bar) {
                 draggingBrightness = false;
             }
         });
         brightnessRow.addView(brightnessBox, new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
-        root.addView(brightnessRow, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+        controls.addView(brightnessRow, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-        // Título da lista, com limpeza total.
+        LinearLayout.LayoutParams controlsParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+        controlsParams.setMargins(0, dp(10), 0, 0);
+        root.addView(controls, controlsParams);
+
+        // Título da lista, com contador e limpeza total.
         LinearLayout heading = new LinearLayout(context);
         heading.setGravity(Gravity.CENTER_VERTICAL);
-        heading.setPadding(0, dp(12), 0, dp(6));
-        TextView headingText = Ui.text(context, "Notificações", 14, Ui.TEXT, true);
-        heading.addView(headingText, new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
+        heading.setPadding(dp(4), dp(16), dp(2), dp(8));
+        heading.addView(Ui.text(context, "Notificações", 15, Ui.TEXT, true));
+        countPill = valuePill();
+        countPill.setVisibility(View.GONE);
+        LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+        countParams.setMargins(dp(8), 0, 0, 0);
+        heading.addView(countPill, countParams);
+        heading.addView(new View(context), new LinearLayout.LayoutParams(0, 0, 1f));
         TextView clear = Ui.text(context, "Limpar tudo", 12, Ui.ACCENT, true);
-        clear.setPadding(dp(8), dp(6), dp(8), dp(6));
+        clear.setPadding(dp(10), dp(6), dp(10), dp(6));
         clear.setBackground(Ui.ripple(context));
         clear.setClickable(true);
+        Ui.pointer(clear, PointerIcon.TYPE_HAND);
         clear.setOnClickListener(v -> {
             launcher.system().clearNotifications();
             lastSignature = NO_SIGNATURE;
@@ -183,28 +231,37 @@ final class NotificationPanel {
         heading.addView(clear);
         root.addView(heading, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-        // Lista com deslocamento.
-        ScrollView scroll = new ScrollView(context);
+        // Lista com deslocamento. A altura acompanha o conteúdo (ver refresh).
+        scroll = new ScrollView(context);
+        scroll.setVerticalScrollBarEnabled(false);
         list = new LinearLayout(context);
         list.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(list);
-        root.addView(scroll, new LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f));
+        root.addView(scroll, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
         // Pedido de acesso às notificações (só quando falta).
         permission = new LinearLayout(context);
-        permission.setGravity(Gravity.CENTER);
-        permission.setPadding(dp(12), dp(12), dp(12), dp(12));
-        permission.setBackground(Ui.box(Ui.ACCENT, dp(12), 0, 0));
+        permission.setGravity(Gravity.CENTER_VERTICAL);
+        permission.setPadding(dp(14), dp(12), dp(14), dp(12));
+        permission.setBackground(Ui.box(Ui.SELECTED_SOFT, dp(14), dp(1), Ui.ACCENT));
         permission.setClickable(true);
+        Ui.pointer(permission, PointerIcon.TYPE_HAND);
         permission.setOnClickListener(v -> launcher.system().notificationAccess());
+        FrameLayout bellCircle = new FrameLayout(context);
+        bellCircle.setBackground(Ui.box(Ui.ACCENT, dp(18), 0, 0));
         ImageView bell = new ImageView(context);
         bell.setImageDrawable(Icons.feature(context, "ic_notifications_active"));
-        permission.addView(bell, new LinearLayout.LayoutParams(dp(18), dp(18)));
-        TextView permissionText = Ui.text(context, "Ativar acesso às notificações", 13, Ui.TEXT, true);
-        permissionText.setPadding(dp(8), 0, 0, 0);
-        permission.addView(permissionText);
+        bell.setPadding(dp(8), dp(8), dp(8), dp(8));
+        bellCircle.addView(bell, new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.CENTER));
+        permission.addView(bellCircle, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        LinearLayout permissionTexts = new LinearLayout(context);
+        permissionTexts.setOrientation(LinearLayout.VERTICAL);
+        permissionTexts.setPadding(dp(12), 0, 0, 0);
+        permissionTexts.addView(Ui.text(context, "Ativar acesso às notificações", 13, Ui.TEXT, true));
+        permissionTexts.addView(Ui.text(context, "Toca para abrir as definições", 11, Ui.MUTED, false));
+        permission.addView(permissionTexts, new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
         LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
-        permissionParams.setMargins(0, dp(8), 0, 0);
+        permissionParams.setMargins(0, dp(12), 0, 0);
         root.addView(permission, permissionParams);
     }
 
@@ -225,7 +282,10 @@ final class NotificationPanel {
         root.setVisibility(View.GONE);
     }
 
-    /** Atualiza estados, valores e a lista (só se o painel estiver aberto). */
+    /**
+     * Atualiza estados, valores, contador e a lista, e ajusta a altura ao conteúdo. Só faz
+     * alguma coisa se o painel estiver aberto. A lista só é redesenhada se algo mudou.
+     */
     void refresh() {
         if (root.getVisibility() != View.VISIBLE) return;
         SystemActions system = launcher.system();
@@ -252,46 +312,79 @@ final class NotificationPanel {
             lastSignature = signature;
             renderList(items, access);
         }
+
+        countPill.setText(String.valueOf(items.size()));
+        countPill.setVisibility(access && !items.isEmpty() ? View.VISIBLE : View.GONE);
+
+        // A lista ocupa o que precisa, até ao limite do ecrã; depois disso rola.
+        Ui.fitPanel(root, scroll, WRAP_CONTENT, launcher.panelMaxHeight());
     }
 
-    /** Pinta um botão de estado: azul quando está ligado, cinzento quando está desligado. */
+    /**
+     * Pinta um botão de estado. Ligado: cartão azul e ícone branco. Desligado: cartão neutro e
+     * ícone esbatido. O texto mostra «Ligado» ou «Desligado».
+     */
     private void setTile(Tile tile, boolean on, String icon) {
-        tile.view.setBackground(Ui.box(on ? Ui.ACCENT : Ui.RAISED, dp(12), 0, 0));
+        tile.view.setBackground(Ui.box(on ? Ui.ACCENT : Ui.RAISED, dp(16), 0, 0));
+        tile.circle.setBackground(Ui.box(on ? 0x33FFFFFF : Ui.FIELD, dp(20), 0, 0));
         tile.icon.setImageDrawable(Icons.feature(context, icon));
+        tile.icon.setColorFilter(on ? Color.WHITE : Ui.MUTED);
         tile.state.setText(on ? "Ligado" : "Desligado");
+        tile.state.setTextColor(on ? Color.WHITE : Ui.MUTED);
     }
 
-    /** Cria um botão de estado (ícone, nome e estado) e junta-o à linha de botões. */
+    /**
+     * Cria um botão de estado (círculo com ícone, nome e estado) e junta-o à linha. Toque
+     * executa a ação indicada.
+     */
     private Tile tile(LinearLayout parent, String label, View.OnClickListener onClick) {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(6), dp(10), dp(6), dp(10));
+        box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setPadding(dp(8), dp(14), dp(8), dp(12));
         box.setClickable(true);
+        Ui.pointer(box, PointerIcon.TYPE_HAND);
         box.setOnClickListener(onClick);
 
+        FrameLayout circle = new FrameLayout(context);
         ImageView icon = new ImageView(context);
-        box.addView(icon, new LinearLayout.LayoutParams(dp(22), dp(22)));
-        box.addView(Ui.text(context, label, 12, Ui.TEXT, true));
-        TextView state = Ui.text(context, "Desligado", 10, Ui.MUTED, false);
+        icon.setPadding(dp(10), dp(10), dp(10), dp(10));
+        circle.addView(icon, new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER));
+        box.addView(circle, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        TextView name = Ui.text(context, label, 12, Ui.TEXT, true);
+        name.setPadding(0, dp(8), 0, 0);
+        box.addView(name);
+        TextView state = Ui.text(context, "Desligado", 10.5f, Ui.MUTED, false);
         box.addView(state);
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f);
-        params.setMargins(dp(4), 0, dp(4), 0);
+        params.setMargins(dp(3), 0, dp(3), 0);
         parent.addView(box, params);
-        return new Tile(box, icon, state);
+        return new Tile(box, circle, icon, state);
     }
 
-    /** Cria uma barra de deslize com rótulo e valor, para o volume ou o brilho. */
-    private SeekBar slider(LinearLayout parent, int max, SeekBar.OnSeekBarChangeListener listener) {
+    /** Pílula pequena com um valor (percentagem ou contador). */
+    private TextView valuePill() {
+        TextView pill = Ui.text(context, "", 11.5f, Ui.TEXT, true);
+        pill.setPadding(dp(8), dp(2), dp(8), dp(2));
+        pill.setBackground(Ui.box(Ui.FIELD, dp(8), 0, 0));
+        return pill;
+    }
+
+    /** Barra de deslize de 0 a 100, sem valor inicial, com o listener indicado. */
+    private SeekBar slider(LinearLayout parent, SeekBar.OnSeekBarChangeListener listener) {
         SeekBar bar = new SeekBar(context);
-        bar.setMax(max);
+        bar.setMax(100);
         bar.setOnSeekBarChangeListener(listener);
         parent.addView(bar, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
         return bar;
     }
 
-    /** Desenha a lista de notificações, ou a mensagem para ativar o acesso às notificações. */
+    /**
+     * Desenha a lista de notificações. Sem acesso, mostra como o ativar; sem notificações,
+     * mostra uma mensagem simples; caso contrário, um cartão por notificação.
+     */
     private void renderList(List<DesktopNotificationListener.Item> items, boolean access) {
         list.removeAllViews();
         if (!access) {
@@ -299,39 +392,53 @@ final class NotificationPanel {
             return;
         }
         if (items.isEmpty()) {
-            list.addView(note("Não existem notificações ativas."));
+            list.addView(note("Estás em dia. Não existem notificações ativas."));
             return;
         }
         for (DesktopNotificationListener.Item item : items) list.addView(card(item));
     }
 
-    /** Uma notificação: tocar abre a aplicação de origem, o × dispensa só esta. */
+    /**
+     * Um cartão de notificação: ícone da app, nome da app, título, texto (até duas linhas) e um
+     * botão para a dispensar. Tocar no cartão abre a aplicação de origem.
+     */
     private View card(final DesktopNotificationListener.Item item) {
         final AppCatalog.App app = launcher.catalog().find(item.packageName);
 
         LinearLayout card = new LinearLayout(context);
-        card.setGravity(Gravity.TOP);
-        card.setPadding(dp(12), dp(10), dp(6), dp(10));
-        card.setBackground(Ui.box(Ui.RAISED, dp(10), 0, 0));
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(12), dp(10), dp(8), dp(10));
+        card.setBackground(Ui.box(Ui.RAISED, dp(14), 0, 0));
         if (app != null) {
             card.setClickable(true);
+            Ui.pointer(card, PointerIcon.TYPE_HAND);
             card.setOnClickListener(v -> launcher.launch(app));
         }
         LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
-        cardParams.setMargins(0, 0, 0, dp(6));
+        cardParams.setMargins(0, 0, 0, dp(8));
         card.setLayoutParams(cardParams);
+
+        ImageView icon = new ImageView(context);
+        Drawable appIcon = app != null ? launcher.iconFor(app) : Icons.feature(context, "ic_app");
+        icon.setImageDrawable(appIcon);
+        card.addView(icon, new LinearLayout.LayoutParams(dp(32), dp(32)));
 
         LinearLayout texts = new LinearLayout(context);
         texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(12), 0, dp(4), 0);
         String appName = app != null ? launcher.displayName(app) : item.packageName;
-        texts.addView(Ui.text(context, appName, 11, Ui.MUTED, false));
+        TextView source = Ui.text(context, appName, 10.5f, Ui.MUTED, true);
+        source.setAllCaps(true);
+        source.setSingleLine(true);
+        source.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(source);
         TextView title = Ui.text(context, item.title, 14, Ui.TEXT, true);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
         texts.addView(title);
         if (!item.text.isEmpty()) {
             TextView body = Ui.text(context, item.text, 12.5f, Ui.MUTED, false);
-            body.setMaxLines(3);
+            body.setMaxLines(2);
             body.setEllipsize(TextUtils.TruncateAt.END);
             texts.addView(body);
         }
@@ -339,23 +446,24 @@ final class NotificationPanel {
 
         ImageView dismiss = new ImageView(context);
         dismiss.setImageDrawable(Icons.feature(context, "ic_close"));
-        dismiss.setPadding(dp(6), dp(6), dp(6), dp(6));
+        dismiss.setPadding(dp(8), dp(8), dp(8), dp(8));
         dismiss.setBackground(Ui.ripple(context));
         dismiss.setClickable(true);
+        Ui.pointer(dismiss, PointerIcon.TYPE_HAND);
         dismiss.setOnClickListener(v -> {
             launcher.system().dismissNotification(item.key);
             lastSignature = NO_SIGNATURE;
             refresh();
         });
-        card.addView(dismiss, new LinearLayout.LayoutParams(dp(30), dp(30)));
+        card.addView(dismiss, new LinearLayout.LayoutParams(dp(32), dp(32)));
         return card;
     }
 
-    /** Texto de apoio cinzento, para mensagens vazias ou de ajuda. */
+    /** Texto de apoio centrado, para mensagens vazias ou de ajuda. */
     private TextView note(String text) {
         TextView view = Ui.text(context, text, 13, Ui.MUTED, false);
         view.setGravity(Gravity.CENTER);
-        view.setPadding(dp(8), dp(24), dp(8), dp(24));
+        view.setPadding(dp(16), dp(28), dp(16), dp(28));
         return view;
     }
 

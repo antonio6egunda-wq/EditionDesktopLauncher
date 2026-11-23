@@ -15,6 +15,7 @@ import android.view.PointerIcon;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -242,5 +243,47 @@ final class Ui {
         field.setBackgroundColor(Color.TRANSPARENT);
         field.setPadding(0, 0, 0, 0);
         return field;
+    }
+
+    /**
+     * Ícone num quadrado arredondado de cor suave, usado nas listas de definições.
+     * `tint` é a cor do quadrado (com transparência) e o ícone fica branco.
+     */
+    static FrameLayout iconTile(Context c, String icon, int tint, int sizeDp, int iconDp) {
+        FrameLayout tile = new FrameLayout(c);
+        tile.setBackground(box(tint, dp(c, 10), 0, 0));
+        ImageView image = new ImageView(c);
+        image.setImageDrawable(Icons.feature(c, icon));
+        int pad = dp(c, (sizeDp - iconDp) / 2f);
+        image.setPadding(pad, pad, pad, pad);
+        tile.addView(image, new FrameLayout.LayoutParams(dp(c, sizeDp), dp(c, sizeDp), Gravity.CENTER));
+        return tile;
+    }
+
+    /**
+     * Ajusta a altura de um painel ao seu conteúdo. A área com deslocamento (`content`) ocupa
+     * a altura desejada (`desiredPx`, ou WRAP_CONTENT para medir o conteúdo), mas nunca mais do
+     * que o painel pode ter (`maxPanelPx`). Se não couber, só essa área encolhe e passa a rolar.
+     * Deve ser chamada depois de o painel ter largura definida pelo launcher.
+     */
+    static void fitPanel(LinearLayout panel, View content, int desiredPx, int maxPanelPx) {
+        ViewGroup.LayoutParams params = content.getLayoutParams();
+        if (params == null) return;
+        if (params instanceof LinearLayout.LayoutParams) {
+            ((LinearLayout.LayoutParams) params).weight = 0;
+        }
+        params.height = desiredPx;
+        content.setLayoutParams(params);
+
+        int width = panel.getLayoutParams() != null ? panel.getLayoutParams().width : 0;
+        if (width <= 0) return;
+        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int total = panel.getMeasuredHeight();
+        if (total > maxPanelPx) {
+            int contentH = content.getMeasuredHeight() - (total - maxPanelPx);
+            params.height = Math.max(dp(panel.getContext(), 120), contentH);
+            content.setLayoutParams(params);
+        }
     }
 }

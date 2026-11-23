@@ -95,6 +95,7 @@ final class Launcher {
     private LinearLayout taskbar;
     private LinearLayout dockRow;
     private EditText searchField;
+    private LinearLayout searchBox;
     private ImageView startButton;
     private ImageView volumeIcon;
     private FrameLayout trayButton;
@@ -380,6 +381,7 @@ final class Launcher {
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(dp(280), dp(36));
         searchParams.setMargins(dp(8), 0, dp(8), 0);
         bar.addView(search, searchParams);
+        searchBox = search;
 
         // Barra: fixadas e apps em segundo plano.
         HorizontalScrollView scroll = new HorizontalScrollView(context);
@@ -449,24 +451,28 @@ final class Launcher {
         int bar = prefs.barHeight();
         int width = screenWidth();
 
-        FrameLayout.LayoutParams apps = frame(Math.min(dp(400), width - dp(20)), MATCH_PARENT,
-                Gravity.START | Gravity.TOP);
-        apps.setMargins(gap, gap, 0, bar + gap);
+        // Os painéis crescem a partir da barra (para cima) e têm a altura do conteúdo.
+        FrameLayout.LayoutParams apps = frame(Math.min(dp(340), width - dp(20)), WRAP_CONTENT,
+                Gravity.START | Gravity.BOTTOM);
+        apps.setMargins(gap, 0, 0, bar + gap);
         appsPanel.view().setLayoutParams(apps);
 
-        FrameLayout.LayoutParams notif = frame(Math.min(dp(380), width - dp(20)), MATCH_PARENT,
-                Gravity.END | Gravity.TOP);
-        notif.setMargins(0, gap, gap, bar + gap);
+        FrameLayout.LayoutParams notif = frame(Math.min(dp(340), width - dp(20)), WRAP_CONTENT,
+                Gravity.END | Gravity.BOTTOM);
+        notif.setMargins(0, 0, gap, bar + gap);
         notificationPanel.view().setLayoutParams(notif);
 
-        FrameLayout.LayoutParams settings = frame(Math.min(dp(460), width - dp(24)), MATCH_PARENT, Gravity.CENTER);
-        settings.setMargins(0, dp(24), 0, bar + dp(24));
+        FrameLayout.LayoutParams settings = frame(Math.min(dp(420), width - dp(24)), WRAP_CONTENT, Gravity.CENTER);
+        settings.setMargins(0, 0, 0, bar + dp(12));
         settingsPanel.view().setLayoutParams(settings);
 
-        FrameLayout.LayoutParams suggest = frame(Math.min(dp(420), width - dp(20)), WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        suggest.setMargins(0, 0, 0, bar + dp(8));
-        suggestBox.setLayoutParams(suggest);
+        // As sugestões são posicionadas em positionSuggest(), junto à caixa de pesquisa.
+        suggestBox.setLayoutParams(frame(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP | Gravity.START));
+    }
+
+    /** Altura máxima de um painel: o espaço acima da barra de tarefas, com uma pequena margem. */
+    int panelMaxHeight() {
+        return screenHeight() - prefs.barHeight() - dp(24);
     }
 
     /** Posiciona as colunas do ambiente de trabalho, a dica e a barra do modo «Organizar». */
@@ -627,11 +633,11 @@ final class Launcher {
         tile.setClickable(true);
         tile.setOnClickListener(v -> onTileTap(app, zone));
         tile.setOnLongClickListener(v -> {
-            if (!arranging) showMenu(displayName(app), menu.create(), tile);
+            if (!arranging) showMenuFor(app, menu.create(), tile);
             return true;
         });
         tile.setOnContextClickListener(v -> {
-            if (!arranging) showMenu(displayName(app), menu.create(), tile);
+            if (!arranging) showMenuFor(app, menu.create(), tile);
             return true;
         });
         if (zone != null) tileViews.put(zone + "|" + app.packageName, tile);
@@ -726,11 +732,26 @@ final class Launcher {
 
     /** Toque longo ou clique direito no espaço vazio do ambiente: abre o menu do ambiente. */
     private boolean onDesktopLongPress() {
-        if (arranging) return false;
+        if (arranging || !isEmptyDesktop(touchX, touchY)) return false;
         closePanels();
         int x = Math.round(touchX);
         int y = Math.round(touchY);
         showMenu(null, desktopMenu(), new Rect(x, y, x, y));
+        return true;
+    }
+
+    /**
+     * Indica se um ponto cai num espaço vazio do ambiente. Painéis, barra, sugestões e a barra
+     * do modo Organizar não contam: um toque longo neles pertence a esses elementos.
+     */
+    private boolean isEmptyDesktop(float x, float y) {
+        int px = Math.round(x);
+        int py = Math.round(y);
+        View[] blockers = {appsPanel.view(), settingsPanel.view(), notificationPanel.view(),
+                taskbar, suggestBox, arrangeBar};
+        for (View view : blockers) {
+            if (view.getVisibility() == View.VISIBLE && rectOf(view).contains(px, py)) return false;
+        }
         return true;
     }
 
@@ -793,6 +814,17 @@ final class Launcher {
         showMenu(title, items, new Rect(x, y, x, y));
     }
 
+    /**
+     * Menu de uma aplicação, junto à vista indicada. O cabeçalho mostra o ícone e o nome da app
+     * e o subtítulo (Aplicação, ou Em execução se estiver na lista de recentes).
+     */
+    void showMenuFor(AppCatalog.App app, List<MenuItem> items, View anchor) {
+        if (items == null || items.isEmpty()) return;
+        boolean running = prefs.list(Prefs.RECENT).contains(app.packageName);
+        contextMenu.show(displayName(app), running ? "Em execução" : "Aplicação",
+                iconFor(app), items, rectOf(anchor));
+    }
+
     /** Abre o menu de contexto junto a uma vista (um ícone, por exemplo). */
     void showMenu(String title, List<MenuItem> items, View anchor) {
         showMenu(title, items, rectOf(anchor));
@@ -801,7 +833,7 @@ final class Launcher {
     /** Abre o menu de contexto junto a um retângulo, em coordenadas do launcher. */
     void showMenu(String title, List<MenuItem> items, Rect anchor) {
         if (items == null || items.isEmpty()) return;
-        contextMenu.show(title, items, anchor);
+        contextMenu.show(title, null, null, items, anchor);
     }
 
     /** Retângulo de uma vista em coordenadas do launcher (usado para posicionar o menu). */
@@ -1030,7 +1062,7 @@ final class Launcher {
         AppCatalog.App app = catalog.find(f.pkg);
         View view = tileViews.get(f.zone + "|" + f.pkg);
         if (app == null || view == null) return false;
-        showMenu(displayName(app), appMenu(app), view);
+        showMenuFor(app, appMenu(app), view);
         return true;
     }
 
@@ -1285,9 +1317,30 @@ final class Launcher {
                 system.googleSearch(raw);
             }));
         }
-        for (SearchItem item : suggestions) suggestBox.addView(suggestRow(item));
+        for (SearchItem item : suggestions) {
+            suggestBox.addView(suggestRow(item), new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+        }
         suggestBox.setVisibility(View.VISIBLE);
         highlightSuggest();
+        positionSuggest();
+    }
+
+    /**
+     * Coloca a lista de sugestões logo acima da caixa de pesquisa da barra, alinhada à sua
+     * esquerda. A largura é, no mínimo, 320 dp, para as linhas caberem bem.
+     */
+    private void positionSuggest() {
+        Rect field = rectOf(searchBox);
+        int width = Math.min(Math.max(dp(320), field.width()), screenWidth() - dp(16));
+        suggestBox.setLayoutParams(frame(width, WRAP_CONTENT, Gravity.TOP | Gravity.START));
+        suggestBox.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        int height = suggestBox.getMeasuredHeight();
+        int margin = dp(8);
+        int x = Math.max(margin, Math.min(field.left, screenWidth() - width - margin));
+        int y = Math.max(margin, field.top - dp(8) - height);
+        suggestBox.setX(x);
+        suggestBox.setY(y);
     }
 
     /** Destaca a sugestão selecionada (com o teclado ou o rato). */
