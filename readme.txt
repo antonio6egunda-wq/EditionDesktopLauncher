@@ -1,8 +1,8 @@
-DESKTOP LAUNCHER - v1.1.2 (Java puro)
+DESKTOP LAUNCHER - v2.0 (Java puro)
 =====================================
 
 Launcher Android com ambiente de trabalho, barra de tarefas, painel de aplicações,
-centro de ações e configurações. Toda a interface é Java (sem WebView, HTML ou JavaScript).
+centro de ações e configurações. Toda a interface é Java
 
 Para compilar: faz push para main ou master, ou corre o workflow manualmente em Actions.
 O APK fica no artefacto "DesktopLauncher-debug".
