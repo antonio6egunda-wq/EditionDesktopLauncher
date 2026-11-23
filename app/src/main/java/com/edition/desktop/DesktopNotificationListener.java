@@ -26,6 +26,7 @@ public class DesktopNotificationListener extends NotificationListenerService {
         final String title;
         final String text;
 
+        /** Uma notificação guardada: chave única, pacote da app, título e texto. */
         Item(String key, String packageName, String title, String text) {
             this.key = key;
             this.packageName = packageName;
@@ -35,6 +36,7 @@ public class DesktopNotificationListener extends NotificationListenerService {
     }
 
     @Override
+    /** Chamado pelo sistema quando o acesso às notificações fica ativo. Guarda as notificações que já estavam no ecrã. */
     public void onListenerConnected() {
         super.onListenerConnected();
         instance = this;
@@ -49,21 +51,25 @@ public class DesktopNotificationListener extends NotificationListenerService {
     }
 
     @Override
+    /** Chamado quando o serviço termina. Deixa de haver uma instância ativa. */
     public void onDestroy() {
         instance = null;
         super.onDestroy();
     }
 
     @Override
+    /** Chamado quando chega uma notificação nova. Guarda-a na lista. */
     public void onNotificationPosted(StatusBarNotification sbn) {
         add(sbn);
     }
 
     @Override
+    /** Chamado quando o sistema remove uma notificação. Retira-a da lista. */
     public void onNotificationRemoved(StatusBarNotification sbn) {
         if (sbn != null) removeKey(sbn.getKey());
     }
 
+    /** Acrescenta uma notificação à lista (sem repetir, a mais recente primeiro), ignorando as permanentes e as vazias. */
     private static void add(StatusBarNotification sbn) {
         if (sbn == null || sbn.isOngoing()) return;
         Notification notification = sbn.getNotification();
@@ -100,6 +106,7 @@ public class DesktopNotificationListener extends NotificationListenerService {
         removeKey(key);
     }
 
+    /** Cancela todas as notificações no sistema (se possível) e esvazia a lista. */
     static void clearAll() {
         DesktopNotificationListener listener = instance;
         if (listener != null) {
@@ -114,6 +121,7 @@ public class DesktopNotificationListener extends NotificationListenerService {
         }
     }
 
+    /** Remove da lista a notificação com a chave indicada, de forma segura entre threads. */
     private static void removeKey(String key) {
         synchronized (ITEMS) {
             removeKeyLocked(key);
@@ -128,6 +136,7 @@ public class DesktopNotificationListener extends NotificationListenerService {
         }
     }
 
+    /** Lê um texto dos extras da notificação e devolve-o sem espaços, ou texto vazio. */
     private static String text(Bundle extras, String key) {
         CharSequence value = extras.getCharSequence(key);
         return value == null ? "" : value.toString().trim();

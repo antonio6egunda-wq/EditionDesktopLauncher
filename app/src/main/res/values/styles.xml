@@ -1,9 +1,10 @@
 <resources>
+    <!-- Tema escuro do launcher. As cores espelham Ui.java para manter a interface coerente. -->
     <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
-        <item name="android:colorAccent">#1687E8</item>
-        <item name="android:windowBackground">#101820</item>
-        <item name="android:statusBarColor">#101820</item>
-        <item name="android:navigationBarColor">#101820</item>
+        <item name="android:colorAccent">#3B82F6</item>
+        <item name="android:windowBackground">#0B1016</item>
+        <item name="android:statusBarColor">#0B1016</item>
+        <item name="android:navigationBarColor">#0B1016</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>

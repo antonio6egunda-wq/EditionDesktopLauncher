@@ -22,6 +22,7 @@ final class AppCatalog {
         final String packageName;
         final String label;
 
+        /** Uma aplicação instalada: nome do pacote e o nome que aparece ao utilizador. */
         App(String packageName, String label) {
             this.packageName = packageName;
             this.label = label;
@@ -61,6 +62,7 @@ final class AppCatalog {
     private final Map<String, App> byPackage = new HashMap<>();
     private final Map<String, Drawable> systemIcons = new HashMap<>();
 
+    /** Cria o catálogo de aplicações, sem as carregar ainda. Guarda o nome do próprio launcher para o excluir. */
     AppCatalog(Context context) {
         pm = context.getPackageManager();
         ownPackage = context.getPackageName();
@@ -87,10 +89,12 @@ final class AppCatalog {
         Collections.sort(apps, (a, b) -> a.label.compareToIgnoreCase(b.label));
     }
 
+    /** Lista de todas as aplicações carregadas, pela ordem alfabética. */
     List<App> all() {
         return apps;
     }
 
+    /** Procura uma aplicação pelo nome do pacote. Devolve null se não estiver instalada. */
     App find(String pkg) {
         return byPackage.get(pkg);
     }

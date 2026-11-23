@@ -17,10 +17,12 @@ final class SystemActions {
 
     private final Context context;
 
+    /** Guarda o contexto da aplicação, usado para abrir atividades e aceder aos serviços do sistema. */
     SystemActions(Context context) {
         this.context = context.getApplicationContext();
     }
 
+    /** Abre uma atividade do sistema. Se nenhuma aplicação a conseguir abrir, não faz nada. */
     private void start(Intent intent) {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
@@ -32,11 +34,13 @@ final class SystemActions {
 
     /* ---------- Aplicações e definições ---------- */
 
+    /** Abre uma aplicação pelo nome do pacote, se tiver uma atividade de arranque. */
     void openApp(String pkg) {
         Intent intent = context.getPackageManager().getLaunchIntentForPackage(pkg);
         if (intent != null) start(intent);
     }
 
+    /** Abre a página de informação da aplicação nas definições do Android. */
     void appInfo(String pkg) {
         start(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg)));
     }
@@ -52,28 +56,34 @@ final class SystemActions {
         if (am != null) am.killBackgroundProcesses(pkg);
     }
 
+    /** Abre as definições do Android. */
     void androidSettings() {
         start(new Intent(Settings.ACTION_SETTINGS));
     }
 
+    /** Abre o ecrã onde se ativa o acesso às notificações para o launcher. */
     void notificationAccess() {
         start(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS));
     }
 
+    /** Abre as definições de localização do sistema. */
     void locationSettings() {
         start(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
     }
 
+    /** Abre as definições de Bluetooth do sistema. */
     void bluetoothSettings() {
         start(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
     }
 
+    /** Abre o painel de Wi-Fi (Android 10 ou superior) ou as definições de Wi-Fi (versões anteriores). */
     void wifiSettings() {
         start(Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                 ? new Intent(Settings.Panel.ACTION_WIFI)
                 : new Intent(Settings.ACTION_WIFI_SETTINGS));
     }
 
+    /** Abre uma pesquisa no Google no navegador, com o texto indicado. */
     void googleSearch(String query) {
         start(new Intent(Intent.ACTION_VIEW,
                 Uri.parse("https://www.google.com/search?q=" + Uri.encode(query.trim()))));
@@ -81,10 +91,12 @@ final class SystemActions {
 
     /* ---------- Wi-Fi, Bluetooth e localização ---------- */
 
+    /** Obtém o serviço de Wi-Fi do sistema. */
     private WifiManager wifi() {
         return (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
     }
 
+    /** Indica se o Wi-Fi está ligado. */
     boolean isWifiEnabled() {
         WifiManager wifi = wifi();
         return wifi != null && wifi.isWifiEnabled();
@@ -100,6 +112,7 @@ final class SystemActions {
         }
     }
 
+    /** Indica se o Bluetooth está ligado. */
     boolean isBluetoothEnabled() {
         BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
         return adapter != null && adapter.isEnabled();
@@ -120,6 +133,7 @@ final class SystemActions {
         }
     }
 
+    /** Indica se a localização do sistema está ativa. */
     boolean isLocationEnabled() {
         try {
             int mode = Settings.Secure.getInt(context.getContentResolver(), Settings.Secure.LOCATION_MODE);
@@ -131,6 +145,7 @@ final class SystemActions {
 
     /* ---------- Som e brilho ---------- */
 
+    /** Obtém o serviço de áudio do sistema. */
     private AudioManager audio() {
         return (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
     }
@@ -143,6 +158,7 @@ final class SystemActions {
         return Math.round(audio.getStreamVolume(AudioManager.STREAM_MUSIC) * 100f / max);
     }
 
+    /** Define o volume da música em percentagem. Valores fora de 0 a 100 são limitados. */
     void setVolume(int percent) {
         AudioManager audio = audio();
         int max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
@@ -150,6 +166,7 @@ final class SystemActions {
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, Math.round(max * value / 100f), 0);
     }
 
+    /** Silencia o volume, ou repõe metade do máximo se já estiver em silêncio. */
     void toggleMute() {
         AudioManager audio = audio();
         if (audio.getStreamVolume(AudioManager.STREAM_MUSIC) == 0) {
@@ -160,6 +177,7 @@ final class SystemActions {
         }
     }
 
+    /** Devolve o brilho do ecrã em percentagem. Se não for possível ler, devolve 50. */
     int getBrightness() {
         try {
             int raw = Settings.System.getInt(context.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS);
@@ -169,6 +187,7 @@ final class SystemActions {
         }
     }
 
+    /** Indica se a aplicação pode alterar as definições do sistema (necessário para o brilho). */
     boolean canWriteSettings() {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.System.canWrite(context);
     }
@@ -188,6 +207,7 @@ final class SystemActions {
         }
     }
 
+    /** Abre o ecrã onde se concede a autorização «Modificar definições do sistema». */
     void requestWriteSettings() {
         start(new Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS,
                 Uri.parse("package:" + context.getPackageName())));
@@ -195,6 +215,7 @@ final class SystemActions {
 
     /* ---------- Notificações ---------- */
 
+    /** Indica se o launcher tem acesso às notificações do sistema. */
     boolean hasNotificationAccess() {
         String enabled = Settings.Secure.getString(
                 context.getContentResolver(), "enabled_notification_listeners");
@@ -207,10 +228,12 @@ final class SystemActions {
     }
 
 
+    /** Dispensa uma notificação (no sistema e na lista do launcher). */
     void dismissNotification(String key) {
         DesktopNotificationListener.dismiss(key);
     }
 
+    /** Dispensa todas as notificações do launcher. */
     void clearNotifications() {
         DesktopNotificationListener.clearAll();
     }

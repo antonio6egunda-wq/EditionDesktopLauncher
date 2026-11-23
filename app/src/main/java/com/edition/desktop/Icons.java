@@ -36,10 +36,12 @@ final class Icons {
         return brand != null ? brand : feature(context, "ic_app");
     }
 
+    /** Nome do recurso do avatar para um índice (limitado aos avatares existentes). */
     static String avatarName(int index) {
         return AVATARS[Prefs.clamp(index, 0, AVATARS.length - 1)];
     }
 
+    /** Nome do ícone de volume conforme o nível: silêncio, baixo ou alto. */
     static String volumeIcon(int level) {
         if (level <= 0) return "ic_volume_off";
         return level < 50 ? "ic_volume_down" : "ic_volume_up";

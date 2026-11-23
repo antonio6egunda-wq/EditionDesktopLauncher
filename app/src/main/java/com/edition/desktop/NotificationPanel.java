@@ -25,6 +25,7 @@ final class NotificationPanel {
         final ImageView icon;
         final TextView state;
 
+        /** Guarda as vistas de um botão de estado, para o poder atualizar mais tarde. */
         Tile(LinearLayout view, ImageView icon, TextView state) {
             this.view = view;
             this.icon = icon;
@@ -51,6 +52,7 @@ final class NotificationPanel {
     private boolean draggingVolume;
     private boolean draggingBrightness;
 
+    /** Constrói o centro de ações (escondido): botões de estado, volume, brilho e lista de notificações. */
     NotificationPanel(Launcher launcher) {
         this.launcher = launcher;
         this.context = launcher.activity();
@@ -206,16 +208,19 @@ final class NotificationPanel {
         root.addView(permission, permissionParams);
     }
 
+    /** Vista raiz do painel, para o launcher o posicionar à direita. */
     LinearLayout view() {
         return root;
     }
 
+    /** Mostra o painel e atualiza todos os controlos com o estado atual do sistema. */
     void open() {
         root.setVisibility(View.VISIBLE);
         lastSignature = NO_SIGNATURE;
         refresh();
     }
 
+    /** Esconde o painel. */
     void close() {
         root.setVisibility(View.GONE);
     }
@@ -249,12 +254,14 @@ final class NotificationPanel {
         }
     }
 
+    /** Pinta um botão de estado: azul quando está ligado, cinzento quando está desligado. */
     private void setTile(Tile tile, boolean on, String icon) {
         tile.view.setBackground(Ui.box(on ? Ui.ACCENT : Ui.RAISED, dp(12), 0, 0));
         tile.icon.setImageDrawable(Icons.feature(context, icon));
         tile.state.setText(on ? "Ligado" : "Desligado");
     }
 
+    /** Cria um botão de estado (ícone, nome e estado) e junta-o à linha de botões. */
     private Tile tile(LinearLayout parent, String label, View.OnClickListener onClick) {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -275,6 +282,7 @@ final class NotificationPanel {
         return new Tile(box, icon, state);
     }
 
+    /** Cria uma barra de deslize com rótulo e valor, para o volume ou o brilho. */
     private SeekBar slider(LinearLayout parent, int max, SeekBar.OnSeekBarChangeListener listener) {
         SeekBar bar = new SeekBar(context);
         bar.setMax(max);
@@ -283,6 +291,7 @@ final class NotificationPanel {
         return bar;
     }
 
+    /** Desenha a lista de notificações, ou a mensagem para ativar o acesso às notificações. */
     private void renderList(List<DesktopNotificationListener.Item> items, boolean access) {
         list.removeAllViews();
         if (!access) {
@@ -342,6 +351,7 @@ final class NotificationPanel {
         return card;
     }
 
+    /** Texto de apoio cinzento, para mensagens vazias ou de ajuda. */
     private TextView note(String text) {
         TextView view = Ui.text(context, text, 13, Ui.MUTED, false);
         view.setGravity(Gravity.CENTER);
@@ -349,6 +359,7 @@ final class NotificationPanel {
         return view;
     }
 
+    /** Assinatura textual da lista. Permite saber se mudou, evitando redesenhar sem necessidade. */
     private static String signatureOf(List<DesktopNotificationListener.Item> items) {
         StringBuilder signature = new StringBuilder();
         for (DesktopNotificationListener.Item item : items) {
@@ -358,6 +369,7 @@ final class NotificationPanel {
         return signature.toString();
     }
 
+    /** Converte dp em píxeis. */
     private int dp(float value) {
         return Ui.dp(context, value);
     }

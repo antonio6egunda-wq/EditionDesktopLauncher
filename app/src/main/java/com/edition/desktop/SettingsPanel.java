@@ -40,6 +40,7 @@ final class SettingsPanel {
     private final LinearLayout body;
     private String screen = MAIN;
 
+    /** Constrói o painel de configurações (escondido): cabeçalho com botão Voltar e área de conteúdo com deslocamento. */
     SettingsPanel(Launcher launcher) {
         this.launcher = launcher;
         this.context = launcher.activity();
@@ -80,15 +81,18 @@ final class SettingsPanel {
         root.addView(scroll, new LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f));
     }
 
+    /** Vista raiz do painel, para o launcher o posicionar. */
     LinearLayout view() {
         return root;
     }
 
+    /** Mostra o painel na vista indicada. */
     void open(String name) {
         root.setVisibility(View.VISIBLE);
         show(name);
     }
 
+    /** Esconde o painel. */
     void close() {
         root.setVisibility(View.GONE);
     }
@@ -100,6 +104,7 @@ final class SettingsPanel {
         return true;
     }
 
+    /** Muda para a vista indicada, atualiza o título e o botão Voltar e reconstrói o conteúdo. */
     void show(String name) {
         screen = name;
         title.setText(titleOf(name));
@@ -112,6 +117,7 @@ final class SettingsPanel {
         if (root.getVisibility() == View.VISIBLE && !BAR.equals(screen)) build();
     }
 
+    /** Devolve o título de cada vista, mostrado no cabeçalho. */
     private static String titleOf(String name) {
         switch (name) {
             case PROFILE: return "Perfil";
@@ -123,6 +129,7 @@ final class SettingsPanel {
         }
     }
 
+    /** Limpa a área de conteúdo, desenha a vista atual e atualiza os cursores das vistas novas. */
     private void build() {
         body.removeAllViews();
         switch (screen) {
@@ -133,8 +140,10 @@ final class SettingsPanel {
             case SYSTEM: buildSystem(); break;
             default: buildMain(); break;
         }
+        launcher.refreshPointers();
     }
 
+    /** Vista principal: lista das categorias de configuração. */
     private void buildMain() {
         LinearLayout card = card();
         addRow(card, row(null, "Perfil", "Nome e avatar", () -> show(PROFILE)));
@@ -144,6 +153,7 @@ final class SettingsPanel {
         addRow(card, row(null, "Sistema", "Definições do Android", () -> show(SYSTEM)));
     }
 
+    /** Vista do perfil: avatar e nome de utilizador. */
     private void buildProfile() {
         Prefs prefs = launcher.prefs();
         LinearLayout card = card();
@@ -155,6 +165,7 @@ final class SettingsPanel {
                 () -> Dialogs.name(launcher)));
     }
 
+    /** Vista do aspeto: miniaturas dos papéis de parede, botão da galeria e nota de ajuda. */
     private void buildAspect() {
         body.addView(section("Papel de parede"));
         Prefs prefs = launcher.prefs();
@@ -182,6 +193,7 @@ final class SettingsPanel {
                 + "Uma nova imagem da galeria substitui a anterior."));
     }
 
+    /** Miniatura de um papel de parede. A que está em uso tem contorno azul. */
     private View thumbnail(final int index, boolean selected) {
         ImageView image = new ImageView(context);
         image.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -194,6 +206,7 @@ final class SettingsPanel {
         return image;
     }
 
+    /** Botão «+» para escolher uma imagem da galeria como papel de parede. */
     private View galleryButton() {
         LinearLayout button = new LinearLayout(context);
         button.setOrientation(LinearLayout.VERTICAL);
@@ -206,6 +219,7 @@ final class SettingsPanel {
         return button;
     }
 
+    /** Vista da barra e dos ícones: três controlos de tamanho e o botão para repor as predefinições. */
     private void buildBar() {
         Prefs prefs = launcher.prefs();
         LinearLayout card = card();
@@ -228,6 +242,7 @@ final class SettingsPanel {
         addRow(card, reset);
     }
 
+    /** Controlo de tamanho com rótulo, valor atual e barra de deslize que aplica a mudança em tempo real. */
     private View slider(String label, final int min, int max, int value, final String unit, final Setter setter) {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -263,6 +278,7 @@ final class SettingsPanel {
         return box;
     }
 
+    /** Vista das aplicações instaladas: uma linha por app, com editar e ocultar. */
     private void buildApps() {
         body.addView(note("Todas as aplicações instaladas. O botão de visibilidade oculta ou mostra "
                 + "cada uma no launcher."));
@@ -275,6 +291,7 @@ final class SettingsPanel {
         for (AppCatalog.App app : all) addRow(card, appRow(app));
     }
 
+    /** Linha de uma app: ícone, nome, botão de editar (nome e ícone) e botão de mostrar ou ocultar. */
     private View appRow(final AppCatalog.App app) {
         final String pkg = app.packageName;
         final boolean hidden = launcher.prefs().isHidden(pkg);
@@ -306,6 +323,7 @@ final class SettingsPanel {
         return row;
     }
 
+    /** Vista do sistema: atalho para as definições do Android. */
     private void buildSystem() {
         LinearLayout card = card();
         addRow(card, row(null, "Definições do Android", "Abrir as definições do sistema",
@@ -325,6 +343,7 @@ final class SettingsPanel {
         return card;
     }
 
+    /** Junta uma linha ao cartão, com um separador antes, exceto na primeira. */
     private void addRow(LinearLayout card, View row) {
         if (card.getChildCount() > 0) {
             View divider = new View(context);
@@ -369,6 +388,7 @@ final class SettingsPanel {
         return row;
     }
 
+    /** Botão pequeno com ícone, usado nas linhas das aplicações. */
     private ImageView actionIcon(String icon, View.OnClickListener listener) {
         ImageView view = new ImageView(context);
         view.setImageDrawable(Icons.feature(context, icon));
@@ -380,18 +400,21 @@ final class SettingsPanel {
         return view;
     }
 
+    /** Título de uma secção dentro de uma vista. */
     private TextView section(String text) {
         TextView view = Ui.text(context, text, 12, Ui.MUTED, true);
         view.setPadding(dp(4), dp(10), dp(4), dp(6));
         return view;
     }
 
+    /** Texto de ajuda cinzento dentro de uma vista. */
     private TextView note(String text) {
         TextView view = Ui.text(context, text, 12, Ui.MUTED, false);
         view.setPadding(dp(4), dp(8), dp(4), dp(8));
         return view;
     }
 
+    /** Converte dp em píxeis. */
     private int dp(float value) {
         return Ui.dp(context, value);
     }

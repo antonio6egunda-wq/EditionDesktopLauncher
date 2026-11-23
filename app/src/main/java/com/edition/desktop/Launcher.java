@@ -1,12 +1,12 @@
 package com.edition.desktop;
 
-import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Handler;
@@ -17,8 +17,10 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
@@ -34,15 +36,18 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
 /**
  * Ecrã principal do launcher: ambiente de trabalho, barra de tarefas e ligação aos painéis.
- * Toda a interface é construída em Java, sem WebView.
+ * Toda a interface é construída em Java, sem WebView. Também guarda o estado do foco do
+ * teclado e do menu de contexto.
  */
 final class Launcher {
 
@@ -84,11 +89,15 @@ final class Launcher {
     private final AppsPanel appsPanel;
     private final SettingsPanel settingsPanel;
     private final NotificationPanel notificationPanel;
+    private final ContextMenu contextMenu;
+    private final Map<String, View> tileViews = new HashMap<>();
 
     private LinearLayout taskbar;
     private LinearLayout dockRow;
     private EditText searchField;
+    private ImageView startButton;
     private ImageView volumeIcon;
+    private FrameLayout trayButton;
     private View notifDot;
     private TextView timeView;
     private TextView dateView;
@@ -97,9 +106,16 @@ final class Launcher {
     private boolean arranging;
     private String selectedPkg;
     private String selectedZone;
+    private String focusZone;
+    private String focusPkg;
+    private int suggestIndex;
+    private float touchX;
+    private float touchY;
     private List<SearchItem> suggestions = new ArrayList<>();
 
+    /** Atualiza relógio, bandeja e cursores de seis em seis segundos, enquanto o launcher estiver ativo. */
     private final Runnable ticker = new Runnable() {
+        /** Uma passagem do ciclo: atualiza relógio e bandeja e agenda a próxima. */
         @Override
         public void run() {
             updateClock();
@@ -109,6 +125,7 @@ final class Launcher {
         }
     };
 
+    /** Constrói todo o ecrã: fundo, ambiente, barra, painéis e menu de contexto (por cima de tudo). */
     Launcher(MainActivity activity) {
         this.activity = activity;
         this.context = activity;
@@ -123,10 +140,17 @@ final class Launcher {
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
         root.addView(wallpaperView, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 
-        // Espaço vazio do ambiente: toque fecha os painéis, toque longo abre o menu.
+        // Espaço vazio do ambiente: toque fecha os painéis, toque longo ou clique direito abre o menu.
         desktopArea = new FrameLayout(activity);
-        desktopArea.setOnClickListener(v -> closePanels());
+        desktopArea.setOnClickListener(v -> {
+            closePanels();
+            if (focusZone != null) setFocus(null, null);
+        });
         desktopArea.setOnLongClickListener(v -> onDesktopLongPress());
+        desktopArea.setOnContextClickListener(v -> {
+            onDesktopLongPress();
+            return true;
+        });
         root.addView(desktopArea, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 
         desktopColumns = new LinearLayout(activity);
@@ -134,9 +158,11 @@ final class Launcher {
         desktopArea.addView(desktopColumns, frame(WRAP_CONTENT, WRAP_CONTENT, Gravity.TOP | Gravity.START));
 
         deskHint = Ui.text(activity,
-                "Mantém premido o ambiente de trabalho para abrir o menu, ou uma aplicação para a afixar aqui.",
+                "Mantém premido o ambiente para abrir o menu, ou uma aplicação para a afixar aqui.\n"
+                        + "Prime Ctrl+/ para ver os atalhos de teclado.",
                 13, Ui.MUTED, false);
         deskHint.setGravity(Gravity.CENTER);
+        deskHint.setLineSpacing(dp(3), 1f);
         deskHint.setMaxWidth(dp(360));
         desktopArea.addView(deskHint, frame(WRAP_CONTENT, WRAP_CONTENT, Gravity.CENTER));
 
@@ -149,7 +175,8 @@ final class Launcher {
         suggestBox = new LinearLayout(activity);
         suggestBox.setOrientation(LinearLayout.VERTICAL);
         suggestBox.setPadding(dp(6), dp(6), dp(6), dp(6));
-        suggestBox.setBackground(Ui.box(Ui.SURFACE, dp(12), dp(1), Ui.STROKE));
+        suggestBox.setBackground(Ui.box(Ui.MENU, dp(14), dp(1), Ui.STROKE));
+        suggestBox.setElevation(dp(12));
         suggestBox.setClickable(true);
         suggestBox.setVisibility(View.GONE);
         root.addView(suggestBox, frame(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
@@ -161,29 +188,38 @@ final class Launcher {
         root.addView(settingsPanel.view());
         root.addView(notificationPanel.view());
 
+        // Último para ficar por cima de tudo.
+        contextMenu = new ContextMenu(this, root);
+
         layoutPanels();
         layoutDesktop();
         applyWallpaper(prefs.wallpaper());
+        refreshPointers();
     }
 
+    /** Vista raiz do launcher, que é o conteúdo da atividade. */
     FrameLayout root() {
         return root;
     }
 
     /* ---------- Acesso para os painéis e diálogos ---------- */
 
+    /** Atividade principal (necessária para diálogos e intenções). */
     MainActivity activity() {
         return activity;
     }
 
+    /** Preferências guardadas no dispositivo. */
     Prefs prefs() {
         return prefs;
     }
 
+    /** Lista de aplicações instaladas. */
     AppCatalog catalog() {
         return catalog;
     }
 
+    /** Ações do sistema (abrir apps, Wi-Fi, volume…). */
     SystemActions system() {
         return system;
     }
@@ -197,11 +233,13 @@ final class Launcher {
         return out;
     }
 
+    /** Nome a mostrar para uma app: o nome personalizado, se existir, senão o original. */
     String displayName(AppCatalog.App app) {
         String custom = prefs.customName(app.packageName);
         return custom != null ? custom : app.label;
     }
 
+    /** Ícone a mostrar para uma app: o personalizado, senão o do sistema ou da marca. */
     Drawable iconFor(AppCatalog.App app) {
         String custom = prefs.customIcon(app.packageName);
         if (custom != null) {
@@ -213,6 +251,7 @@ final class Launcher {
 
     /* ---------- Ciclo de vida ---------- */
 
+    /** Chamado quando a atividade fica visível: recarrega apps, redesenha e inicia o relógio. */
     void onResume() {
         catalog.reload();
         prune();
@@ -223,6 +262,7 @@ final class Launcher {
         handler.post(ticker);
     }
 
+    /** Chamado quando a atividade deixa de estar visível: para o relógio. */
     void onPause() {
         handler.removeCallbacks(ticker);
     }
@@ -242,43 +282,51 @@ final class Launcher {
 
     /* ---------- Construção ---------- */
 
+    /** Atalho para converter dp em píxeis. */
     private int dp(float value) {
         return Ui.dp(context, value);
     }
 
+    /** Largura do ecrã em píxeis. */
     private int screenWidth() {
         return context.getResources().getDisplayMetrics().widthPixels;
     }
 
+    /** Altura do ecrã em píxeis. */
     private int screenHeight() {
         return context.getResources().getDisplayMetrics().heightPixels;
     }
 
+    /** Cria parâmetros de layout para um FrameLayout, com tamanho e alinhamento. */
     private static FrameLayout.LayoutParams frame(int width, int height, int gravity) {
         return new FrameLayout.LayoutParams(width, height, gravity);
     }
 
+    /** Barra flutuante do modo «Organizar», com instruções e o botão «Concluído». */
     private LinearLayout buildArrangeBar() {
         LinearLayout bar = new LinearLayout(context);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(14), dp(8), dp(8), dp(8));
-        bar.setBackground(Ui.box(Ui.SURFACE, dp(12), dp(1), Ui.STROKE));
+        bar.setPadding(dp(16), dp(8), dp(8), dp(8));
+        bar.setBackground(Ui.box(Ui.MENU, dp(14), dp(1), Ui.STROKE));
+        bar.setElevation(dp(10));
         bar.setClickable(true);
         bar.setVisibility(View.GONE);
 
         TextView text = Ui.text(context, "Toca num ícone e depois noutro para trocar de lugar.", 13, Ui.TEXT, false);
-        text.setMaxWidth(dp(260));
+        text.setMaxWidth(dp(280));
         bar.addView(text, new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT));
 
-        TextView done = Ui.text(context, "Concluído", 13, Ui.ACCENT, true);
-        done.setPadding(dp(12), dp(8), dp(12), dp(8));
-        done.setBackground(Ui.ripple(context));
-        done.setClickable(true);
-        done.setOnClickListener(v -> setArranging(false));
-        bar.addView(done);
+        TextView done = Ui.button(context, "Concluído", true, () -> setArranging(false));
+        LinearLayout.LayoutParams doneParams = new LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT);
+        doneParams.leftMargin = dp(12);
+        bar.addView(done, doneParams);
         return bar;
     }
 
+    /**
+     * Barra de tarefas: botão Aplicações, pesquisa, barra de apps fixadas e em execução,
+     * bandeja (volume, notificações) e relógio. Cada botão tem uma dica ao passar o cursor.
+     */
     private LinearLayout buildTaskbar() {
         LinearLayout bar = new LinearLayout(context);
         bar.setGravity(Gravity.CENTER_VERTICAL);
@@ -286,9 +334,10 @@ final class Launcher {
         bar.setPadding(dp(6), 0, dp(8), 0);
         bar.setClickable(true);
 
-        ImageView start = barIcon("ic_app", dp(13), v -> togglePanel(PANEL_APPS));
-        barButtons.add(start);
-        bar.addView(start, new LinearLayout.LayoutParams(prefs.barHeight(), MATCH_PARENT));
+        startButton = barIcon("ic_app", dp(13), v -> togglePanel(PANEL_APPS));
+        Ui.tooltip(startButton, "Aplicações (Win)");
+        barButtons.add(startButton);
+        bar.addView(startButton, new LinearLayout.LayoutParams(prefs.barHeight(), MATCH_PARENT));
 
         // Pesquisa: aplicações, definições ou Google.
         LinearLayout search = new LinearLayout(context);
@@ -296,25 +345,20 @@ final class Launcher {
         search.setBackground(Ui.box(Ui.FIELD, dp(18), 0, 0));
         search.setPadding(dp(14), 0, dp(4), 0);
 
-        searchField = new EditText(context);
-        searchField.setHint("Pesquisar");
-        searchField.setHintTextColor(Ui.MUTED);
-        searchField.setTextColor(Ui.TEXT);
-        searchField.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        searchField.setSingleLine(true);
-        searchField.setBackgroundColor(Color.TRANSPARENT);
-        searchField.setPadding(0, 0, 0, 0);
-        searchField.setInputType(InputType.TYPE_CLASS_TEXT);
+        searchField = Ui.field(context, "Pesquisar  (Ctrl+F)");
         searchField.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         searchField.addTextChangedListener(new TextWatcher() {
+            /** Não faz nada antes da alteração. */
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
 
+            /** Recalcula as sugestões a cada tecla. */
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 renderSuggest();
             }
 
+            /** Não faz nada depois da alteração. */
             @Override
             public void afterTextChanged(Editable s) { }
         });
@@ -330,6 +374,7 @@ final class Launcher {
         go.setBackground(Ui.ripple(context));
         go.setClickable(true);
         go.setOnClickListener(v -> submitSearch());
+        Ui.pointer(go, android.view.PointerIcon.TYPE_HAND);
         search.addView(go, new LinearLayout.LayoutParams(dp(36), dp(36)));
 
         LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(dp(280), dp(36));
@@ -350,25 +395,27 @@ final class Launcher {
             notificationPanel.refresh();
             updateTray();
         });
+        Ui.tooltip(volumeIcon, "Volume (clique para silenciar)");
         barButtons.add(volumeIcon);
         bar.addView(volumeIcon, new LinearLayout.LayoutParams(prefs.barHeight(), MATCH_PARENT));
 
-        FrameLayout tray = new FrameLayout(context);
-        tray.setBackground(Ui.ripple(context));
-        tray.setClickable(true);
-        tray.setOnClickListener(v -> togglePanel(PANEL_NOTIF));
+        trayButton = new FrameLayout(context);
+        trayButton.setBackground(Ui.ripple(context));
+        trayButton.setClickable(true);
+        trayButton.setOnClickListener(v -> togglePanel(PANEL_NOTIF));
+        Ui.tooltip(trayButton, "Centro de ações (Win+A)");
         ImageView bell = new ImageView(context);
         bell.setImageDrawable(Icons.feature(context, "ic_notifications"));
         bell.setPadding(dp(11), dp(11), dp(11), dp(11));
-        tray.addView(bell, frame(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER));
+        trayButton.addView(bell, frame(MATCH_PARENT, MATCH_PARENT, Gravity.CENTER));
         notifDot = new View(context);
         notifDot.setBackground(Ui.box(Ui.ACCENT, dp(4), 0, 0));
         notifDot.setVisibility(View.GONE);
         FrameLayout.LayoutParams dotParams = frame(dp(8), dp(8), Gravity.TOP | Gravity.END);
         dotParams.setMargins(0, dp(16), dp(16), 0);
-        tray.addView(notifDot, dotParams);
-        barButtons.add(tray);
-        bar.addView(tray, new LinearLayout.LayoutParams(prefs.barHeight(), MATCH_PARENT));
+        trayButton.addView(notifDot, dotParams);
+        barButtons.add(trayButton);
+        bar.addView(trayButton, new LinearLayout.LayoutParams(prefs.barHeight(), MATCH_PARENT));
 
         LinearLayout clock = new LinearLayout(context);
         clock.setOrientation(LinearLayout.VERTICAL);
@@ -382,6 +429,7 @@ final class Launcher {
         return bar;
     }
 
+    /** Botão quadrado da barra, só com ícone, que reage ao rato e ao toque. */
     private ImageView barIcon(String icon, int padding, View.OnClickListener listener) {
         ImageView view = new ImageView(context);
         view.setImageDrawable(Icons.feature(context, icon));
@@ -456,16 +504,26 @@ final class Launcher {
     void render() {
         renderDesktop();
         renderDock();
+        renderActiveButtons();
         appsPanel.refresh();
         settingsPanel.refresh();
+        refreshPointers();
     }
 
+    /**
+     * Aplica o cursor a toda a interface: mão sobre o que se pode clicar, seta no resto.
+     * Chamado sempre que a árvore de vistas muda, para o cursor não cair no círculo do sistema.
+     */
+    void refreshPointers() {
+        Ui.pointers(root);
+    }
+
+    /** Desenha as apps afixadas no ambiente, em colunas, com o nome por baixo de cada ícone. */
     private void renderDesktop() {
         desktopColumns.removeAllViews();
         int icon = prefs.deskIcon();
         int width = Math.max(dp(92), icon + dp(52));
-        int rowHeight = icon + dp(30);
-        int rows = Math.max(1, (screenHeight() - prefs.barHeight() - dp(72)) / (rowHeight + dp(4)));
+        int rows = rowsPerColumn();
 
         LinearLayout column = null;
         int inColumn = 0;
@@ -488,6 +546,14 @@ final class Launcher {
         deskHint.setVisibility(shown > 0 || arranging ? View.GONE : View.VISIBLE);
     }
 
+    /** Número de ícones que cabem numa coluna do ambiente, conforme a altura do ecrã. */
+    private int rowsPerColumn() {
+        int icon = prefs.deskIcon();
+        int rowHeight = icon + dp(30);
+        return Math.max(1, (screenHeight() - prefs.barHeight() - dp(72)) / (rowHeight + dp(4)));
+    }
+
+    /** Cria uma nova coluna vertical no ambiente de trabalho. */
     private LinearLayout newColumn() {
         LinearLayout column = new LinearLayout(context);
         column.setOrientation(LinearLayout.VERTICAL);
@@ -497,6 +563,10 @@ final class Launcher {
         return column;
     }
 
+    /**
+     * Desenha a barra: apps fixadas, depois uma linha separadora e as apps em segundo plano.
+     * No modo «Organizar» acrescenta um espaço vazio para mover o item selecionado para o fim.
+     */
     private void renderDock() {
         dockRow.removeAllViews();
         int icon = prefs.barIcon();
@@ -522,21 +592,49 @@ final class Launcher {
         }
     }
 
-    /** Um ícone com nome opcional. Com `zone` definida, pode ser trocado no modo «Organizar». */
+    /** Atualiza o destaque dos botões da barra conforme o painel aberto (Aplicações, Notificações). */
+    private void renderActiveButtons() {
+        setActive(startButton, currentPanel == PANEL_APPS);
+        setActive(trayButton, currentPanel == PANEL_NOTIF);
+    }
+
+    /** Pinta o fundo de um botão da barra como ativo (com cor) ou normal (transparente). */
+    private void setActive(View view, boolean on) {
+        if (view == null) return;
+        view.setBackground(on ? Ui.box(Ui.SELECTED_SOFT, dp(10), 0, 0) : Ui.ripple(context));
+    }
+
+    /**
+     * Um ícone de app, com nome opcional. Com `zone` definida pode ser trocado no modo
+     * «Organizar». Destaca-se se for a seleção do modo Organizar ou o foco do teclado.
+     * Toque abre a app; toque longo ou clique direito abre o menu.
+     */
     private View tile(final AppCatalog.App app, final String zone, int iconPx, int widthPx,
                       boolean showLabel, final MenuFactory menu) {
-        LinearLayout tile = new LinearLayout(context);
+        final LinearLayout tile = new LinearLayout(context);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER_HORIZONTAL);
         tile.setPadding(dp(3), dp(4), dp(3), dp(4));
         boolean selected = zone != null && app.packageName.equals(selectedPkg) && zone.equals(selectedZone);
-        tile.setBackground(selected ? Ui.box(Ui.SELECTED, dp(10), 0, 0) : Ui.ripple(context));
+        boolean focused = zone != null && app.packageName.equals(focusPkg) && zone.equals(focusZone);
+        if (selected) {
+            tile.setBackground(Ui.box(Ui.SELECTED, dp(10), 0, 0));
+        } else if (focused) {
+            tile.setBackground(Ui.focusBox(context));
+        } else {
+            tile.setBackground(Ui.ripple(context));
+        }
         tile.setClickable(true);
         tile.setOnClickListener(v -> onTileTap(app, zone));
         tile.setOnLongClickListener(v -> {
-            if (!arranging) showMenu(displayName(app), menu.create());
+            if (!arranging) showMenu(displayName(app), menu.create(), tile);
             return true;
         });
+        tile.setOnContextClickListener(v -> {
+            if (!arranging) showMenu(displayName(app), menu.create(), tile);
+            return true;
+        });
+        if (zone != null) tileViews.put(zone + "|" + app.packageName, tile);
 
         ImageView icon = new ImageView(context);
         icon.setImageDrawable(iconFor(app));
@@ -548,6 +646,8 @@ final class Launcher {
             label.setSingleLine(true);
             label.setEllipsize(TextUtils.TruncateAt.END);
             tile.addView(label, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+        } else {
+            Ui.tooltip(tile, displayName(app));
         }
         tile.setLayoutParams(new LinearLayout.LayoutParams(widthPx, WRAP_CONTENT));
         return tile;
@@ -565,6 +665,7 @@ final class Launcher {
         return slot;
     }
 
+    /** Toque num ícone: no modo Organizar troca de lugar; fora dele, abre a app. */
     private void onTileTap(AppCatalog.App app, String zone) {
         if (arranging) {
             if (zone != null) arrangeTap(app.packageName, zone);
@@ -573,6 +674,7 @@ final class Launcher {
         launch(app);
     }
 
+    /** Devolve a app se ainda existir e não estiver oculta; senão devolve null. */
     private AppCatalog.App visibleApp(String pkg) {
         AppCatalog.App app = catalog.find(pkg);
         return app != null && !prefs.isHidden(pkg) ? app : null;
@@ -590,6 +692,7 @@ final class Launcher {
         return out;
     }
 
+    /** Atualiza a hora e a data (formato português de Portugal). */
     private void updateClock() {
         Date now = new Date();
         Locale pt = new Locale("pt", "PT");
@@ -597,76 +700,144 @@ final class Launcher {
         dateView.setText(new SimpleDateFormat("dd/MM/yyyy", pt).format(now));
     }
 
+    /** Atualiza o ícone de volume e o ponto de notificação pendente. */
     private void updateTray() {
         volumeIcon.setImageDrawable(Icons.feature(context, Icons.volumeIcon(system.getVolume())));
         boolean pending = system.hasNotificationAccess()
                 && !DesktopNotificationListener.snapshot().isEmpty();
         notifDot.setVisibility(pending ? View.VISIBLE : View.GONE);
+        refreshPointers();
+    }
+
+    /* ---------- Entrada: toques e rato ---------- */
+
+    /**
+     * Guarda a posição do último toque ou clique (inclusive do rato). Assim o menu do
+     * ambiente abre onde o utilizador clicou com o botão direito ou fez toque longo.
+     */
+    void noteTouch(MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            touchX = event.getX();
+            touchY = event.getY();
+        }
     }
 
     /* ---------- Menus ---------- */
 
-    /** Toque longo no espaço vazio do ambiente. */
+    /** Toque longo ou clique direito no espaço vazio do ambiente: abre o menu do ambiente. */
     private boolean onDesktopLongPress() {
         if (arranging) return false;
         closePanels();
-        showMenu(null, desktopMenu());
+        int x = Math.round(touchX);
+        int y = Math.round(touchY);
+        showMenu(null, desktopMenu(), new Rect(x, y, x, y));
         return true;
     }
 
-    /** Menu de uma aplicação, com o estado atual das fixações. */
+    /** Menu de uma aplicação no ambiente ou na barra, com o estado atual das fixações e atalhos. */
     List<MenuItem> appMenu(final AppCatalog.App app) {
         final String pkg = app.packageName;
         boolean onDesktop = prefs.list(ZONE_DESKTOP).contains(pkg);
         boolean onDock = prefs.list(ZONE_DOCK).contains(pkg);
 
         List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem("Renomear", () -> Dialogs.rename(this, app)));
-        items.add(new MenuItem("Editar ícone", () -> Dialogs.iconPicker(this, app)));
+        items.add(new MenuItem("Renomear", "ic_edit", "F2", false, () -> Dialogs.rename(this, app)));
+        items.add(new MenuItem("Editar ícone", "ic_category", null, false, () -> Dialogs.iconPicker(this, app)));
         items.add(onDesktop
-                ? new MenuItem("Remover do ambiente", () -> setPinned(ZONE_DESKTOP, pkg, false))
-                : new MenuItem("Afixar no ambiente", () -> setPinned(ZONE_DESKTOP, pkg, true)));
+                ? new MenuItem("Remover do ambiente", "ic_close", null, false,
+                () -> setPinned(ZONE_DESKTOP, pkg, false))
+                : new MenuItem("Afixar no ambiente", "ic_pin", null, false,
+                () -> setPinned(ZONE_DESKTOP, pkg, true)));
         items.add(onDock
-                ? new MenuItem("Remover da barra", () -> setPinned(ZONE_DOCK, pkg, false))
-                : new MenuItem("Afixar na barra", () -> setPinned(ZONE_DOCK, pkg, true)));
+                ? new MenuItem("Remover da barra", "ic_close", null, false,
+                () -> setPinned(ZONE_DOCK, pkg, false))
+                : new MenuItem("Afixar na barra", "ic_pin", null, false,
+                () -> setPinned(ZONE_DOCK, pkg, true)));
         if (onDesktop || onDock) {
-            items.add(new MenuItem("Organizar", () -> setArranging(true)));
+            items.add(new MenuItem("Organizar", "ic_display_settings", "Ctrl+Shift+O", false,
+                    () -> setArranging(true)));
         }
-        items.add(new MenuItem("Ocultar", () -> setHidden(pkg, true)));
-        items.add(new MenuItem("Desinstalar", () -> Dialogs.confirmUninstall(this, app)));
-        items.add(new MenuItem("Informação", () -> system.appInfo(pkg)));
+        items.add(new MenuItem("Ocultar", "ic_visibility_off", null, true, () -> setHidden(pkg, true)));
+        items.add(new MenuItem("Desinstalar", "ic_remove", null, true,
+                () -> Dialogs.confirmUninstall(this, app)));
+        items.add(new MenuItem("Informação", "ic_help", null, false, () -> system.appInfo(pkg)));
         return items;
     }
 
+    /** Menu de uma app em segundo plano (na barra, à direita das fixadas). */
     private List<MenuItem> runningMenu(final AppCatalog.App app) {
         final String pkg = app.packageName;
         List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem("Fixar na barra", () -> setPinned(ZONE_DOCK, pkg, true)));
-        items.add(new MenuItem("Fechar app", () -> closeRunningApp(pkg)));
+        items.add(new MenuItem("Fixar na barra", "ic_pin", null, false,
+                () -> setPinned(ZONE_DOCK, pkg, true)));
+        items.add(new MenuItem("Fechar app", "ic_power_settings", null, true, () -> closeRunningApp(pkg)));
         return items;
     }
 
+    /** Menu do ambiente de trabalho (clique direito ou toque longo no espaço vazio). */
     private List<MenuItem> desktopMenu() {
         List<MenuItem> items = new ArrayList<>();
-        items.add(new MenuItem("Organizar", () -> setArranging(true)));
-        items.add(new MenuItem("Fechar todas as apps", this::closeAllRunning));
-        items.add(new MenuItem("Configurações do launcher", () -> openSettings(SettingsPanel.MAIN)));
+        items.add(new MenuItem("Organizar", "ic_display_settings", "Ctrl+Shift+O", false,
+                () -> setArranging(true)));
+        items.add(new MenuItem("Mostrar atalhos de teclado", "ic_keyboard", "F1", false, this::showHelp));
+        items.add(new MenuItem("Fechar todas as apps", "ic_power_settings", null, true, this::closeAllRunning));
+        items.add(new MenuItem("Configurações do launcher", "ic_settings", "Ctrl+,", false,
+                () -> openSettings(SettingsPanel.MAIN)));
         return items;
     }
 
-    /** Lista de opções num diálogo simples. */
+    /** Abre o menu de contexto com um título, centrado no meio do ecrã (uso raro). */
     void showMenu(String title, List<MenuItem> items) {
-        if (items.isEmpty()) return;
-        CharSequence[] labels = new CharSequence[items.size()];
-        for (int i = 0; i < labels.length; i++) labels[i] = items.get(i).label;
-        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
-        if (title != null) builder.setTitle(title);
-        builder.setItems(labels, (dialog, which) -> items.get(which).action.run());
-        builder.show();
+        int x = screenWidth() / 2;
+        int y = screenHeight() / 2;
+        showMenu(title, items, new Rect(x, y, x, y));
+    }
+
+    /** Abre o menu de contexto junto a uma vista (um ícone, por exemplo). */
+    void showMenu(String title, List<MenuItem> items, View anchor) {
+        showMenu(title, items, rectOf(anchor));
+    }
+
+    /** Abre o menu de contexto junto a um retângulo, em coordenadas do launcher. */
+    void showMenu(String title, List<MenuItem> items, Rect anchor) {
+        if (items == null || items.isEmpty()) return;
+        contextMenu.show(title, items, anchor);
+    }
+
+    /** Retângulo de uma vista em coordenadas do launcher (usado para posicionar o menu). */
+    private Rect rectOf(View view) {
+        int[] viewAt = new int[2];
+        int[] rootAt = new int[2];
+        view.getLocationInWindow(viewAt);
+        root.getLocationInWindow(rootAt);
+        int left = viewAt[0] - rootAt[0];
+        int top = viewAt[1] - rootAt[1];
+        return new Rect(left, top, left + view.getWidth(), top + view.getHeight());
+    }
+
+    /** Indica se algum menu de contexto está aberto. */
+    boolean isMenuOpen() {
+        return contextMenu.isOpen();
+    }
+
+    /** Fecha o menu de contexto, se estiver aberto. */
+    void closeMenu() {
+        contextMenu.close();
+    }
+
+    /** Move a seleção do menu (teclado). */
+    boolean menuMove(int delta) {
+        return contextMenu.moveSelection(delta);
+    }
+
+    /** Executa a opção escolhida no menu (teclado). */
+    boolean menuActivate() {
+        return contextMenu.activateSelected();
     }
 
     /* ---------- Modo «Organizar»: tocar para trocar ---------- */
 
+    /** Liga ou desliga o modo «Organizar» e fecha os painéis e a seleção anterior. */
     void setArranging(boolean on) {
         arranging = on;
         clearSelection();
@@ -676,6 +847,12 @@ final class Launcher {
         render();
     }
 
+    /** Alterna o modo «Organizar» (atalho Ctrl+Shift+O). */
+    void toggleArranging() {
+        setArranging(!arranging);
+    }
+
+    /** Primeiro toque seleciona; o segundo, noutra app, troca os dois de lugar. */
     private void arrangeTap(String pkg, String zone) {
         if (selectedPkg == null) {
             selectedPkg = pkg;
@@ -721,6 +898,7 @@ final class Launcher {
         prefs.putList(zoneB, listB);
     }
 
+    /** Move o item selecionado para o fim da zona indicada. */
     private void moveSelectedToEnd(String zone) {
         if (selectedPkg == null) return;
         List<String> from = prefs.list(selectedZone);
@@ -734,9 +912,136 @@ final class Launcher {
         render();
     }
 
+    /** Limpa a seleção do modo «Organizar». */
     private void clearSelection() {
         selectedPkg = null;
         selectedZone = null;
+    }
+
+    /* ---------- Foco do teclado nos ícones ---------- */
+
+    /** Um ícone que pode receber o foco: a zona (ambiente ou barra) e o nome do pacote. */
+    private static final class Focus {
+        final String zone;
+        final String pkg;
+
+        /** Cria um foco para a zona e o pacote indicados. */
+        Focus(String zone, String pkg) {
+            this.zone = zone;
+            this.pkg = pkg;
+        }
+    }
+
+    /** Lista, pela ordem visual, todos os ícones que podem receber o foco (primeiro o ambiente). */
+    private List<Focus> focusOrder() {
+        List<Focus> out = new ArrayList<>();
+        for (String pkg : prefs.list(ZONE_DESKTOP)) {
+            if (visibleApp(pkg) != null) out.add(new Focus(ZONE_DESKTOP, pkg));
+        }
+        for (String pkg : prefs.list(ZONE_DOCK)) {
+            if (visibleApp(pkg) != null) out.add(new Focus(ZONE_DOCK, pkg));
+        }
+        return out;
+    }
+
+    /** Posição do foco atual na lista de ícones, ou -1 se não houver foco. */
+    private int focusIndex(List<Focus> order) {
+        for (int i = 0; i < order.size(); i++) {
+            Focus f = order.get(i);
+            if (f.zone.equals(focusZone) && f.pkg.equals(focusPkg)) return i;
+        }
+        return -1;
+    }
+
+    /** Define o ícone com foco (null, null remove o foco) e redesenha para mostrar o contorno. */
+    private void setFocus(String zone, String pkg) {
+        focusZone = zone;
+        focusPkg = pkg;
+        render();
+    }
+
+    /** Devolve o ícone com foco, ou null se não houver ou se já não existir. */
+    private Focus currentFocus() {
+        List<Focus> order = focusOrder();
+        int i = focusIndex(order);
+        return i < 0 ? null : order.get(i);
+    }
+
+    /**
+     * Move o foco com as setas. No ambiente, cima e baixo andam dentro da coluna e esquerda
+     * e direita trocam de coluna; na barra, só esquerda e direita. Devolve true (tecla consumida).
+     */
+    boolean moveFocus(int dx, int dy) {
+        if (currentPanel != PANEL_NONE) return false;
+        List<Focus> order = focusOrder();
+        if (order.isEmpty()) return false;
+        int i = focusIndex(order);
+        if (i < 0) {
+            setFocus(order.get(0).zone, order.get(0).pkg);
+            return true;
+        }
+        int deskCount = 0;
+        for (Focus f : order) {
+            if (ZONE_DESKTOP.equals(f.zone)) deskCount++;
+        }
+        int target = -1;
+        if (ZONE_DESKTOP.equals(order.get(i).zone)) {
+            int rows = rowsPerColumn();
+            if (dy != 0) {
+                int t = i + dy;
+                if (t >= 0 && t < deskCount && t / rows == i / rows) target = t;
+            } else if (dx != 0) {
+                int t = i + dx * rows;
+                if (t >= 0 && t < deskCount) target = t;
+            }
+        } else if (dx != 0) {
+            int t = i + dx;
+            if (t >= deskCount && t < order.size()) target = t;
+        }
+        if (target >= 0) setFocus(order.get(target).zone, order.get(target).pkg);
+        return true;
+    }
+
+    /** Passa o foco para o ícone seguinte (step 1) ou anterior (step -1), como o Tab. */
+    boolean cycleFocus(int step) {
+        if (currentPanel != PANEL_NONE) return false;
+        List<Focus> order = focusOrder();
+        if (order.isEmpty()) return false;
+        int i = focusIndex(order);
+        int next = i < 0 ? (step > 0 ? 0 : order.size() - 1) : (i + step + order.size()) % order.size();
+        setFocus(order.get(next).zone, order.get(next).pkg);
+        return true;
+    }
+
+    /** Abre a app que tem o foco (Enter). Devolve false se não houver foco. */
+    boolean activateFocused() {
+        Focus f = currentFocus();
+        if (f == null) return false;
+        AppCatalog.App app = catalog.find(f.pkg);
+        if (app == null) return false;
+        launch(app);
+        return true;
+    }
+
+    /** Abre o menu do ícone com foco, junto a ele (Shift+F10 ou tecla Menu). */
+    boolean menuForFocused() {
+        Focus f = currentFocus();
+        if (f == null) return false;
+        AppCatalog.App app = catalog.find(f.pkg);
+        View view = tileViews.get(f.zone + "|" + f.pkg);
+        if (app == null || view == null) return false;
+        showMenu(displayName(app), appMenu(app), view);
+        return true;
+    }
+
+    /** Renomeia o ícone com foco (F2). */
+    boolean renameFocused() {
+        Focus f = currentFocus();
+        if (f == null) return false;
+        AppCatalog.App app = catalog.find(f.pkg);
+        if (app == null) return false;
+        Dialogs.rename(this, app);
+        return true;
     }
 
     /* ---------- Ações sobre aplicações e preferências ---------- */
@@ -749,6 +1054,7 @@ final class Launcher {
         system.openApp(app.packageName);
     }
 
+    /** Coloca a app no topo da lista de recentes, mantendo o limite de apps em execução. */
     private void rememberRecent(String pkg) {
         List<String> recent = prefs.list(Prefs.RECENT);
         recent.remove(pkg);
@@ -757,6 +1063,7 @@ final class Launcher {
         prefs.putList(Prefs.RECENT, recent);
     }
 
+    /** Fecha a app em segundo plano e tira-a da lista de recentes. */
     private void closeRunningApp(String pkg) {
         system.killApp(pkg);
         List<String> recent = prefs.list(Prefs.RECENT);
@@ -765,12 +1072,14 @@ final class Launcher {
         render();
     }
 
+    /** Fecha todas as apps em segundo plano e esvazia a lista de recentes. */
     private void closeAllRunning() {
         for (String pkg : prefs.list(Prefs.RECENT)) system.killApp(pkg);
         prefs.putList(Prefs.RECENT, new ArrayList<String>());
         render();
     }
 
+    /** Afixa ou desafixa uma app numa zona (ambiente ou barra). */
     void setPinned(String zone, String pkg, boolean on) {
         List<String> list = prefs.list(zone);
         if (on && !list.contains(pkg)) list.add(pkg);
@@ -788,39 +1097,46 @@ final class Launcher {
         render();
     }
 
+    /** Guarda um nome personalizado para a app (vazio ou null repõe o original). */
     void setCustomName(String pkg, String value) {
         String clean = value == null || value.isEmpty() ? null : truncate(value, Prefs.NAME_MAX);
         prefs.setCustomName(pkg, clean);
         render();
     }
 
+    /** Guarda um ícone personalizado para a app (null repõe o original). */
     void setCustomIcon(String pkg, String icon) {
         prefs.setCustomIcon(pkg, icon);
         render();
     }
 
+    /** Guarda o nome de utilizador (vazio repõe o predefinido). */
     void setProfileName(String value) {
         String clean = value == null ? "" : value.trim();
         prefs.setProfileName(clean.isEmpty() ? null : truncate(clean, Prefs.PROFILE_NAME_MAX));
         render();
     }
 
+    /** Guarda o avatar escolhido. */
     void setAvatar(int index) {
         prefs.setAvatar(index);
         render();
     }
 
+    /** Corta um texto ao comprimento máximo indicado. */
     private static String truncate(String value, int max) {
         return value.length() > max ? value.substring(0, max) : value;
     }
 
     /* ---------- Painéis ---------- */
 
+    /** Abre o painel se estiver fechado, ou fecha-o se já estiver aberto. */
     void togglePanel(int panel) {
         if (currentPanel == panel) closePanels();
         else openPanel(panel);
     }
 
+    /** Fecha os outros painéis e abre o indicado. */
     void openPanel(int panel) {
         closePanels();
         currentPanel = panel;
@@ -831,25 +1147,55 @@ final class Launcher {
         } else if (panel == PANEL_SETTINGS) {
             settingsPanel.open(SettingsPanel.MAIN);
         }
+        renderActiveButtons();
+        refreshPointers();
     }
 
+    /** Abre as configurações numa vista específica (principal, perfil, aspeto…). */
     void openSettings(String screen) {
         openPanel(PANEL_SETTINGS);
         settingsPanel.show(screen);
     }
 
+    /** Fecha todos os painéis, o menu de sugestões da pesquisa e o contorno de foco da barra. */
     void closePanels() {
         appsPanel.close();
         settingsPanel.close();
         notificationPanel.close();
         currentPanel = PANEL_NONE;
         hideSuggest();
+        renderActiveButtons();
     }
 
-    /** Botão Voltar: fecha o que estiver aberto, ou recua uma vista das configurações. */
+    /** Indica se algum painel (Aplicações, Notificações ou Configurações) está aberto. */
+    boolean anyPanelOpen() {
+        return currentPanel != PANEL_NONE;
+    }
+
+    /** Mostra o ambiente de trabalho: fecha painéis e sugestões (Win+D). */
+    void showDesktop() {
+        closePanels();
+        closeMenu();
+    }
+
+    /** Abre a janela de atalhos de teclado (F1 ou Ctrl+/). */
+    void showHelp() {
+        closeMenu();
+        Dialogs.shortcuts(this);
+    }
+
+    /**
+     * Botão Voltar e tecla Esc: fecha o menu, as sugestões, o painel ou o modo Organizar,
+     * por esta ordem. Nunca sai do launcher. Devolve false se não houver nada para fechar.
+     */
     boolean handleBack() {
+        if (contextMenu.isOpen()) {
+            contextMenu.close();
+            return true;
+        }
         if (suggestBox.getVisibility() == View.VISIBLE) {
             hideSuggest();
+            searchField.clearFocus();
             return true;
         }
         if (currentPanel == PANEL_SETTINGS && settingsPanel.back()) return true;
@@ -861,15 +1207,56 @@ final class Launcher {
             setArranging(false);
             return true;
         }
+        if (focusZone != null) {
+            setFocus(null, null);
+            return true;
+        }
         return false;
+    }
+
+    /* ---------- Teclado: estado dos campos ---------- */
+
+    /** Indica se algum campo de texto tem o foco (nesse caso as teclas são para escrever). */
+    boolean isTyping() {
+        View focus = activity.getCurrentFocus();
+        return focus instanceof EditText;
+    }
+
+    /** Indica se o campo de pesquisa da barra tem o foco. */
+    boolean isSearchFocused() {
+        return searchField != null && searchField.hasFocus();
+    }
+
+    /** Indica se a lista de sugestões está visível e tem pelo menos uma opção. */
+    boolean hasSuggestions() {
+        return suggestBox.getVisibility() == View.VISIBLE && !suggestions.isEmpty();
+    }
+
+    /** Coloca o cursor no campo de pesquisa da barra e mostra o teclado (Ctrl+F). */
+    void focusSearch() {
+        if (searchField == null) return;
+        searchField.requestFocus();
+        searchField.selectAll();
+        InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(searchField, InputMethodManager.SHOW_IMPLICIT);
+    }
+
+    /** Move a seleção entre as sugestões da pesquisa (setas para cima e para baixo). */
+    void searchMove(int delta) {
+        if (suggestions.isEmpty()) return;
+        int n = suggestions.size();
+        suggestIndex = (suggestIndex + delta + n) % n;
+        highlightSuggest();
     }
 
     /* ---------- Pesquisa da barra: aplicações, definições ou Google ---------- */
 
+    /** Recalcula as sugestões para o texto atual da pesquisa e mostra-as acima da barra. */
     private void renderSuggest() {
         String raw = searchField.getText().toString().trim();
         suggestBox.removeAllViews();
         suggestions = new ArrayList<>();
+        suggestIndex = 0;
         if (raw.isEmpty()) {
             suggestBox.setVisibility(View.GONE);
             return;
@@ -894,14 +1281,26 @@ final class Launcher {
         if (suggestions.isEmpty()) {
             suggestions.add(new SearchItem("Pesquisar «" + raw + "» no Google", "",
                     Icons.feature(context, "ic_search"), () -> {
-                        hideSuggest();
-                        system.googleSearch(raw);
-                    }));
+                hideSuggest();
+                system.googleSearch(raw);
+            }));
         }
         for (SearchItem item : suggestions) suggestBox.addView(suggestRow(item));
         suggestBox.setVisibility(View.VISIBLE);
+        highlightSuggest();
     }
 
+    /** Destaca a sugestão selecionada (com o teclado ou o rato). */
+    private void highlightSuggest() {
+        for (int i = 0; i < suggestBox.getChildCount(); i++) {
+            View row = suggestBox.getChildAt(i);
+            row.setBackground(i == suggestIndex
+                    ? Ui.box(Ui.SELECTED_SOFT, dp(10), 0, 0)
+                    : Ui.ripple(context));
+        }
+    }
+
+    /** Uma linha de sugestão: ícone, nome e tipo (Aplicação, Definição). Clicar executa-a. */
     private View suggestRow(final SearchItem item) {
         LinearLayout row = new LinearLayout(context);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -930,22 +1329,25 @@ final class Launcher {
         return row;
     }
 
+    /** Esconde e limpa a lista de sugestões. */
     private void hideSuggest() {
         suggestBox.setVisibility(View.GONE);
         suggestBox.removeAllViews();
         suggestions = new ArrayList<>();
+        suggestIndex = 0;
     }
 
-    /** Enter na pesquisa executa a primeira sugestão. */
+    /** Enter na pesquisa executa a sugestão selecionada (por omissão, a primeira). */
     private void submitSearch() {
         renderSuggest();
         if (suggestions.isEmpty()) return;
-        Runnable first = suggestions.get(0).action;
+        Runnable chosen = suggestions.get(Math.min(suggestIndex, suggestions.size() - 1)).action;
         hideSuggest();
         searchField.setText("");
-        first.run();
+        chosen.run();
     }
 
+    /** Lista de definições que a pesquisa também encontra, com palavras-chave sem acentos. */
     private List<SettingOption> settingOptions() {
         List<SettingOption> options = new ArrayList<>();
         options.add(new SettingOption("Definições do Android", "ic_settings",
@@ -981,6 +1383,7 @@ final class Launcher {
         settingsPanel.refresh();
     }
 
+    /** Indica se existe uma imagem da galeria guardada. */
     boolean hasCustomWallpaper() {
         return customWallpaperFile().isFile();
     }
@@ -990,6 +1393,7 @@ final class Launcher {
         return loadWallpaper(index, 4);
     }
 
+    /** Carrega um papel de parede, com uma amostragem que reduz a memória (sampleSize). */
     private Bitmap loadWallpaper(int index, int sampleSize) {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inSampleSize = sampleSize;
@@ -999,10 +1403,12 @@ final class Launcher {
         return BitmapFactory.decodeResource(context.getResources(), WALLPAPERS[index], options);
     }
 
+    /** Ficheiro onde se guarda a imagem escolhida na galeria. */
     private File customWallpaperFile() {
         return new File(context.getFilesDir(), CUSTOM_WALLPAPER_FILE);
     }
 
+    /** Abre o seletor de imagens do sistema para escolher um papel de parede. */
     void pickWallpaper() {
         Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
         pick.setType("image/*");
@@ -1015,6 +1421,7 @@ final class Launcher {
         }
     }
 
+    /** Recebe a imagem escolhida: guarda-a e aplica-a, ou avisa que não foi possível usá-la. */
     void onWallpaperPicked(Uri uri) {
         if (uri != null && saveCustomWallpaper(uri)) {
             applyWallpaper(Prefs.WALLPAPER_CUSTOM);
@@ -1053,6 +1460,7 @@ final class Launcher {
         }
     }
 
+    /** Fator de redução (potência de 2) para que a imagem fique abaixo de maxPx. */
     private static int sampleSize(int width, int height, int maxPx) {
         int size = 1;
         while (width / (size * 2) >= maxPx && height / (size * 2) >= maxPx) size *= 2;
@@ -1061,29 +1469,46 @@ final class Launcher {
 
     /* ---------- Tipos internos ---------- */
 
-    /** Item de um menu: texto e ação. */
+    /**
+     * Item de um menu: texto, ícone opcional, atalho de teclado mostrado à direita (opcional),
+     * indicação de ação perigosa e a ação a executar.
+     */
     static final class MenuItem {
         final String label;
+        final String icon;
+        final String hint;
+        final boolean danger;
         final Runnable action;
 
+        /** Opção simples, sem ícone nem atalho. */
         MenuItem(String label, Runnable action) {
+            this(label, null, null, false, action);
+        }
+
+        /** Opção completa, com ícone, atalho e destaque para ações destrutivas. */
+        MenuItem(String label, String icon, String hint, boolean danger, Runnable action) {
             this.label = label;
+            this.icon = icon;
+            this.hint = hint;
+            this.danger = danger;
             this.action = action;
         }
     }
 
     /** Cria o menu no momento do toque longo, quando o estado já pode ter mudado. */
     interface MenuFactory {
+        /** Devolve as opções atuais do menu. */
         List<MenuItem> create();
     }
 
-    /** Sugestão da pesquisa. */
+    /** Sugestão da pesquisa: nome, tipo, ícone e a ação ao escolher. */
     private static final class SearchItem {
         final String label;
         final String sub;
         final Drawable icon;
         final Runnable action;
 
+        /** Cria uma sugestão com nome, tipo, ícone e ação. */
         SearchItem(String label, String sub, Drawable icon, Runnable action) {
             this.label = label;
             this.sub = sub;
@@ -1099,6 +1524,7 @@ final class Launcher {
         final String[] keys;
         final Runnable action;
 
+        /** Cria uma definição pesquisável com nome, ícone, palavras-chave e ação. */
         SettingOption(String label, String icon, String[] keys, Runnable action) {
             this.label = label;
             this.icon = icon;
@@ -1106,6 +1532,7 @@ final class Launcher {
             this.action = action;
         }
 
+        /** Indica se a consulta (sem acentos) corresponde ao nome ou a uma palavra-chave. */
         boolean matches(String query) {
             if (AppCatalog.normalize(label).contains(query)) return true;
             for (String key : keys) {

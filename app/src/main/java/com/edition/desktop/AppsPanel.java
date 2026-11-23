@@ -1,11 +1,11 @@
 package com.edition.desktop;
 
 import android.content.Context;
+import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
-import android.text.Editable;
-import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.PointerIcon;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.BaseAdapter;
@@ -22,7 +22,10 @@ import java.util.List;
 import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
 import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 
-/** Painel de aplicações, à esquerda: perfil, pesquisa e grelha de aplicações. */
+/**
+ * Painel de aplicações, à esquerda: perfil no topo, pesquisa e uma grelha com todas as apps.
+ * Toque abre a app; toque longo ou clique direito abre o menu da app.
+ */
 final class AppsPanel {
 
     private static final int COLUMNS = 4;
@@ -38,14 +41,16 @@ final class AppsPanel {
     private final Adapter adapter;
     private List<AppCatalog.App> shown = new ArrayList<>();
 
+    /** Constrói o painel (escondido): cabeçalho com perfil, pesquisa, mensagem vazia e grelha. */
     AppsPanel(Launcher launcher) {
         this.launcher = launcher;
         this.context = launcher.activity();
 
         root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(10), dp(10), dp(10), dp(10));
-        root.setBackground(Ui.box(Ui.SURFACE, dp(14), dp(1), Ui.STROKE));
+        root.setPadding(dp(12), dp(12), dp(12), dp(12));
+        root.setBackground(Ui.box(Ui.SURFACE, dp(16), dp(1), Ui.STROKE));
+        root.setElevation(dp(16));
         root.setClickable(true);
         root.setVisibility(View.GONE);
 
@@ -55,21 +60,23 @@ final class AppsPanel {
 
         LinearLayout profile = new LinearLayout(context);
         profile.setGravity(Gravity.CENTER_VERTICAL);
-        profile.setPadding(dp(6), dp(6), dp(6), dp(6));
+        profile.setPadding(dp(6), dp(6), dp(8), dp(6));
         profile.setBackground(Ui.ripple(context));
         profile.setClickable(true);
+        Ui.pointer(profile, PointerIcon.TYPE_HAND);
         profile.setOnClickListener(v -> launcher.openSettings(SettingsPanel.PROFILE));
 
         avatar = new ImageView(context);
-        avatar.setBackground(Ui.box(Ui.RAISED, dp(20), 0, 0));
+        avatar.setBackground(Ui.box(Ui.RAISED, dp(22), dp(1), Ui.STROKE));
         avatar.setPadding(dp(4), dp(4), dp(4), dp(4));
-        profile.addView(avatar, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        profile.addView(avatar, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
         LinearLayout texts = new LinearLayout(context);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.setPadding(dp(10), 0, 0, 0);
         name = Ui.text(context, "", 15, Ui.TEXT, true);
         name.setSingleLine(true);
+        name.setEllipsize(TextUtils.TruncateAt.END);
         count = Ui.text(context, "", 12, Ui.MUTED, false);
         texts.addView(name);
         texts.addView(count);
@@ -81,30 +88,37 @@ final class AppsPanel {
                 new LinearLayout.LayoutParams(dp(44), dp(44)));
         root.addView(header, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-        // Pesquisa.
-        search = new EditText(context);
-        search.setHint("Pesquisar aplicações");
-        search.setHintTextColor(Ui.MUTED);
-        search.setTextColor(Ui.TEXT);
-        search.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        search.setSingleLine(true);
-        search.setBackground(Ui.box(Ui.FIELD, dp(18), 0, 0));
-        search.setPadding(dp(14), dp(8), dp(14), dp(8));
+        // Pesquisa, com ícone de lupa à esquerda.
+        LinearLayout field = new LinearLayout(context);
+        field.setGravity(Gravity.CENTER_VERTICAL);
+        field.setBackground(Ui.box(Ui.FIELD, dp(12), 0, 0));
+        field.setPadding(dp(12), 0, dp(8), 0);
+        ImageView lens = new ImageView(context);
+        lens.setImageDrawable(Icons.feature(context, "ic_search"));
+        lens.setColorFilter(Ui.MUTED);
+        field.addView(lens, new LinearLayout.LayoutParams(dp(18), dp(18)));
+
+        search = Ui.field(context, "Pesquisar aplicações");
+        search.setPadding(dp(10), dp(10), 0, dp(10));
         search.addTextChangedListener(new TextWatcher() {
+            /** Não faz nada antes da alteração. */
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
 
+            /** Filtra a grelha a cada tecla. */
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 refresh();
             }
 
+            /** Não faz nada depois da alteração. */
             @Override
             public void afterTextChanged(Editable s) { }
         });
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
-        searchParams.setMargins(dp(4), dp(10), dp(4), dp(8));
-        root.addView(search, searchParams);
+        field.addView(search, new LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams fieldParams = new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT);
+        fieldParams.setMargins(dp(2), dp(10), dp(2), dp(10));
+        root.addView(field, fieldParams);
 
         empty = Ui.text(context, "", 13, Ui.MUTED, false);
         empty.setGravity(Gravity.CENTER);
@@ -112,7 +126,7 @@ final class AppsPanel {
         empty.setVisibility(View.GONE);
         root.addView(empty, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
 
-        // Grelha de aplicações.
+        // Grelha de aplicações. Cada célula trata o seu clique (ver Adapter.getView).
         adapter = new Adapter();
         GridView grid = new GridView(context);
         grid.setNumColumns(COLUMNS);
@@ -120,24 +134,21 @@ final class AppsPanel {
         grid.setHorizontalSpacing(dp(4));
         grid.setSelector(android.R.color.transparent);
         grid.setAdapter(adapter);
-        grid.setOnItemClickListener((parent, view, position, id) -> launcher.launch(shown.get(position)));
-        grid.setOnItemLongClickListener((parent, view, position, id) -> {
-            AppCatalog.App app = shown.get(position);
-            launcher.showMenu(launcher.displayName(app), launcher.appMenu(app));
-            return true;
-        });
         root.addView(grid, new LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f));
     }
 
+    /** Vista raiz do painel, para o launcher o posicionar e mostrar. */
     LinearLayout view() {
         return root;
     }
 
+    /** Mostra o painel e atualiza o conteúdo. */
     void open() {
         root.setVisibility(View.VISIBLE);
         refresh();
     }
 
+    /** Esconde o painel. */
     void close() {
         root.setVisibility(View.GONE);
     }
@@ -174,36 +185,52 @@ final class AppsPanel {
         adapter.notifyDataSetChanged();
     }
 
+    /** Converte dp em píxeis. */
     private int dp(float value) {
         return Ui.dp(context, value);
     }
 
-    /** Uma célula da grelha: ícone e nome. */
+    /** Uma célula da grelha: ícone e nome, com destaque ao passar o rato. */
     private final class Adapter extends BaseAdapter {
 
+        /** Número de apps visíveis na grelha. */
         @Override
         public int getCount() {
             return shown.size();
         }
 
+        /** Devolve a app da posição indicada. */
         @Override
         public Object getItem(int position) {
             return shown.get(position);
         }
 
+        /** O identificador é a própria posição. */
         @Override
         public long getItemId(int position) {
             return position;
         }
 
+        /** Cria a célula de uma app: ícone grande e nome, com cursor de mão e clique direito. */
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
-            AppCatalog.App app = shown.get(position);
+            final AppCatalog.App app = shown.get(position);
             LinearLayout cell = new LinearLayout(context);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER_HORIZONTAL);
             cell.setPadding(dp(4), dp(8), dp(4), dp(6));
             cell.setBackground(Ui.ripple(context));
+            cell.setClickable(true);
+            Ui.pointer(cell, PointerIcon.TYPE_HAND);
+            cell.setOnClickListener(v -> launcher.launch(app));
+            cell.setOnLongClickListener(v -> {
+                launcher.showMenu(launcher.displayName(app), launcher.appMenu(app), v);
+                return true;
+            });
+            cell.setOnContextClickListener(v -> {
+                launcher.showMenu(launcher.displayName(app), launcher.appMenu(app), v);
+                return true;
+            });
 
             ImageView icon = new ImageView(context);
             icon.setImageDrawable(launcher.iconFor(app));
