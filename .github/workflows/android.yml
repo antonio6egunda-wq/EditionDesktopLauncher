@@ -25,11 +25,12 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android platform 33 and build-tools
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-33" "build-tools;33.0.2"
+        with:
+          packages: |
+            cmdline-tools;latest
+            platform-tools
+            platforms;android-33
+            build-tools;33.0.2
 
       - name: Set up Gradle 7.6.3
         uses: gradle/actions/setup-gradle@v3
