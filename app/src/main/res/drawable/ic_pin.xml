@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gerado por tools/svg_to_vector.py a partir de pin.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M14 8H34V11L31 16V25H34V28H25V42H23V28H14V25H17V16L14 11Z"/>
+</vector>
