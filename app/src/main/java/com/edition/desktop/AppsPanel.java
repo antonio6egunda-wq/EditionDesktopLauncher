@@ -189,11 +189,6 @@ final class AppsPanel {
         empty.setText(message == null ? "" : message);
         empty.setVisibility(message == null ? View.GONE : View.VISIBLE);
         adapter.notifyDataSetChanged();
-
-        // A grelha tem a altura das suas linhas (até ao limite do ecrã); o resto do painel acompanha.
-        int rows = (shown.size() + COLUMNS - 1) / COLUMNS;
-        int gridHeight = Math.max(dp(40), rows * dp(96));
-        Ui.fitPanel(root, grid, gridHeight, launcher.panelMaxHeight());
     }
 
     /** Converte dp em píxeis. */

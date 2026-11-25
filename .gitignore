@@ -7,3 +7,4 @@ local.properties
 *.apk
 *.keystore
 *.jks
+!app/launcher-debug.keystore

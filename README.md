@@ -4,7 +4,7 @@ Launcher Android com ambiente de trabalho, barra de tarefas, painel de aplicaç�
 ações e configurações. **Implementado só em Java**, com as vistas construídas em código
 (`View`, `LinearLayout`, `GridView`…). Não usa WebView, HTML, CSS nem JavaScript.
 
-**Versão:** 2.3 (`versionName` 2.3, `versionCode` 11)
+**Versão:** 2.4 (`versionName` 2.4; `versionCode` = 1000 + número da execução do CI)
 
 ## Funcionalidades
 
@@ -46,6 +46,17 @@ escrevem nele e os atalhos de letra não atuam.
 
 Os atalhos estão em `Shortcuts.java`. A lista mostrada ao utilizador (`Shortcuts.HELP`) deve ser
 atualizada sempre que um atalho mudar.
+
+## Instalar por cima de versões anteriores
+
+- Todas as builds são assinadas com a chave fixa `app/launcher-debug.keystore`. Por isso, uma
+  build nova instala-se por cima da anterior sem conflito de assinatura.
+- No CI, o `versionCode` é `1000 + GITHUB_RUN_NUMBER`, sempre crescente. Cada APK novo é uma
+  versão mais recente e pode substituir o anterior.
+- O Android não deixa instalar uma versão mais antiga por cima de uma mais nova. Para isso é
+  preciso desinstalar primeiro (apaga os dados do launcher) ou usar `adb install -r -d`.
+- A primeira instalação desta versão, por cima de uma build antiga com outra chave, precisa de
+  uma desinstalação única. Depois disso, as atualizações funcionam normalmente.
 
 ## Requisitos
 

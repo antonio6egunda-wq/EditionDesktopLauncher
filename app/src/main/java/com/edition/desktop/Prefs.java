@@ -25,12 +25,12 @@ final class Prefs {
     static final int PROFILE_NAME_MAX = 24;
     static final int NAME_MAX = 40;
 
-    static final int BAR_HEIGHT_DEFAULT = 68;
-    static final int BAR_HEIGHT_MIN = 56;
-    static final int BAR_HEIGHT_MAX = 84;
-    static final int BAR_ICON_DEFAULT = 40;
-    static final int BAR_ICON_MIN = 20;
-    static final int BAR_ICON_MAX = 44;
+    static final int BAR_HEIGHT_DEFAULT = 80;
+    static final int BAR_HEIGHT_MIN = 64;
+    static final int BAR_HEIGHT_MAX = 96;
+    static final int BAR_ICON_DEFAULT = 50;
+    static final int BAR_ICON_MIN = 30;
+    static final int BAR_ICON_MAX = 64;
     static final int DESK_ICON_DEFAULT = 40;
     static final int DESK_ICON_MIN = 32;
     static final int DESK_ICON_MAX = 72;
@@ -107,22 +107,22 @@ final class Prefs {
 
     /** Altura da barra de tarefas, em dp. */
     int barHeight() {
-        return clamp(sp.getInt("bar_height", BAR_HEIGHT_DEFAULT), BAR_HEIGHT_MIN, BAR_HEIGHT_MAX);
+        return clamp(sp.getInt("bar_height_v2", BAR_HEIGHT_DEFAULT), BAR_HEIGHT_MIN, BAR_HEIGHT_MAX);
     }
 
     /** Guarda a altura da barra, limitada ao intervalo permitido. */
     void setBarHeight(int value) {
-        sp.edit().putInt("bar_height", clamp(value, BAR_HEIGHT_MIN, BAR_HEIGHT_MAX)).apply();
+        sp.edit().putInt("bar_height_v2", clamp(value, BAR_HEIGHT_MIN, BAR_HEIGHT_MAX)).apply();
     }
 
     /** Tamanho dos ícones da barra, em dp. */
     int barIcon() {
-        return clamp(sp.getInt("bar_icon", BAR_ICON_DEFAULT), BAR_ICON_MIN, BAR_ICON_MAX);
+        return clamp(sp.getInt("bar_icon_v2", BAR_ICON_DEFAULT), BAR_ICON_MIN, BAR_ICON_MAX);
     }
 
     /** Guarda o tamanho dos ícones da barra, limitado ao intervalo permitido. */
     void setBarIcon(int value) {
-        sp.edit().putInt("bar_icon", clamp(value, BAR_ICON_MIN, BAR_ICON_MAX)).apply();
+        sp.edit().putInt("bar_icon_v2", clamp(value, BAR_ICON_MIN, BAR_ICON_MAX)).apply();
     }
 
     /** Tamanho dos ícones do ambiente de trabalho, em dp. */
@@ -137,7 +137,7 @@ final class Prefs {
 
     /** Repõe as medidas da barra e dos ícones para os valores predefinidos. */
     void resetBar() {
-        sp.edit().remove("bar_height").remove("bar_icon").remove("desk_icon").apply();
+        sp.edit().remove("bar_height_v2").remove("bar_icon_v2").remove("desk_icon").apply();
     }
 
     /** Índice 0 a 4 de um predefinido, ou WALLPAPER_CUSTOM para a imagem da galeria. */

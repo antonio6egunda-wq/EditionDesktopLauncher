@@ -18,6 +18,7 @@ import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
+import android.view.PointerIcon;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -102,6 +103,7 @@ final class Launcher {
     private View notifDot;
     private TextView timeView;
     private TextView dateView;
+    private HorizontalScrollView dockScroll;
 
     private int currentPanel = PANEL_NONE;
     private boolean arranging;
@@ -333,7 +335,8 @@ final class Launcher {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setBackgroundColor(Ui.TASKBAR);
         bar.setPadding(dp(6), 0, dp(8), 0);
-        bar.setClickable(true);
+        // A barra não é clicável: assim não «engole» o cursor e as áreas por baixo funcionam.
+        bar.setClickable(false);
 
         startButton = barIcon("ic_app", dp(13), v -> togglePanel(PANEL_APPS));
         Ui.tooltip(startButton, "Aplicações (Win)");
@@ -346,7 +349,8 @@ final class Launcher {
         search.setBackground(Ui.box(Ui.FIELD, dp(18), 0, 0));
         search.setPadding(dp(14), 0, dp(4), 0);
 
-        searchField = Ui.field(context, "Pesquisar  (Ctrl+F)");
+        searchField = Ui.field(context, "Pesquisar aplicações, definições ou Google  (Ctrl+F)");
+        searchField.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         searchField.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         searchField.addTextChangedListener(new TextWatcher() {
             /** Não faz nada antes da alteração. */
@@ -371,14 +375,15 @@ final class Launcher {
 
         ImageView go = new ImageView(context);
         go.setImageDrawable(Icons.feature(context, "ic_search"));
-        go.setPadding(dp(8), dp(8), dp(8), dp(8));
+        go.setPadding(dp(9), dp(9), dp(9), dp(9));
         go.setBackground(Ui.ripple(context));
         go.setClickable(true);
         go.setOnClickListener(v -> submitSearch());
         Ui.pointer(go, android.view.PointerIcon.TYPE_HAND);
-        search.addView(go, new LinearLayout.LayoutParams(dp(36), dp(36)));
+        search.addView(go, new LinearLayout.LayoutParams(dp(42), dp(42)));
 
-        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(dp(280), dp(36));
+        // Caixa de pesquisa larga e alta, proporcional ao ecrã (entre 340 e 560 dp).
+        LinearLayout.LayoutParams searchParams = new LinearLayout.LayoutParams(searchWidth(), dp(46));
         searchParams.setMargins(dp(8), 0, dp(8), 0);
         bar.addView(search, searchParams);
         searchBox = search;
@@ -386,6 +391,7 @@ final class Launcher {
         // Barra: fixadas e apps em segundo plano.
         HorizontalScrollView scroll = new HorizontalScrollView(context);
         scroll.setHorizontalScrollBarEnabled(false);
+        dockScroll = scroll;
         dockRow = new LinearLayout(context);
         dockRow.setGravity(Gravity.CENTER_VERTICAL);
         scroll.addView(dockRow, frame(WRAP_CONTENT, MATCH_PARENT, Gravity.CENTER_VERTICAL));
@@ -422,13 +428,24 @@ final class Launcher {
         LinearLayout clock = new LinearLayout(context);
         clock.setOrientation(LinearLayout.VERTICAL);
         clock.setGravity(Gravity.CENTER);
-        clock.setPadding(dp(6), 0, dp(4), 0);
-        timeView = Ui.text(context, "--:--", 13, Ui.TEXT, true);
-        dateView = Ui.text(context, "", 10, Ui.MUTED, false);
+        clock.setPadding(dp(10), 0, dp(8), 0);
+        timeView = Ui.text(context, "--:--", 17, Ui.TEXT, true);
+        dateView = Ui.text(context, "", 12, Ui.MUTED, false);
         clock.addView(timeView);
         clock.addView(dateView);
         bar.addView(clock, new LinearLayout.LayoutParams(WRAP_CONTENT, MATCH_PARENT));
         return bar;
+    }
+
+    /** Largura da caixa de pesquisa: uma fração do ecrã, sempre entre 340 e 560 dp. */
+    private int searchWidth() {
+        int proportional = (int) (screenWidth() * 0.34f);
+        return Math.max(dp(340), Math.min(dp(560), proportional));
+    }
+
+    /** Altura fixa do painel de aplicações: a mesma em todas as aberturas (máximo 620 dp). */
+    private int appsHeight() {
+        return Math.min(dp(620), panelMaxHeight());
     }
 
     /** Botão quadrado da barra, só com ícone, que reage ao rato e ao toque. */
@@ -452,7 +469,8 @@ final class Launcher {
         int width = screenWidth();
 
         // Os painéis crescem a partir da barra (para cima) e têm a altura do conteúdo.
-        FrameLayout.LayoutParams apps = frame(Math.min(dp(340), width - dp(20)), WRAP_CONTENT,
+        // Painel de aplicações: tamanho único (largura e altura fixas), não cresce com o conteúdo.
+        FrameLayout.LayoutParams apps = frame(Math.min(dp(340), width - dp(20)), appsHeight(),
                 Gravity.START | Gravity.BOTTOM);
         apps.setMargins(gap, 0, 0, bar + gap);
         appsPanel.view().setLayoutParams(apps);
@@ -522,6 +540,10 @@ final class Launcher {
      */
     void refreshPointers() {
         Ui.pointers(root);
+        // Áreas que não são botões mostram sempre a seta, mesmo que tenham sido marcadas como clicáveis.
+        Ui.pointer(desktopArea, PointerIcon.TYPE_ARROW);
+        Ui.pointer(taskbar, PointerIcon.TYPE_ARROW);
+        if (dockScroll != null) Ui.pointer(dockScroll, PointerIcon.TYPE_ARROW);
     }
 
     /** Desenha as apps afixadas no ambiente, em colunas, com o nome por baixo de cada ícone. */
