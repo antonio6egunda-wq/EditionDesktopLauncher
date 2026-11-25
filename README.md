@@ -4,7 +4,7 @@ Launcher Android com ambiente de trabalho, barra de tarefas, painel de aplicaç�
 ações e configurações. **Implementado só em Java**, com as vistas construídas em código
 (`View`, `LinearLayout`, `GridView`…). Não usa WebView, HTML, CSS nem JavaScript.
 
-**Versão:** 2.4 (`versionName` 2.4; `versionCode` = 1000 + número da execução do CI)
+**Versão:** 2.5 (`versionName` 2.5; `versionCode` = 1000 + número da execução do CI)
 
 ## Funcionalidades
 

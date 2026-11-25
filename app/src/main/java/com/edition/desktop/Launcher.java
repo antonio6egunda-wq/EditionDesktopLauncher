@@ -138,6 +138,8 @@ final class Launcher {
 
         root = new FrameLayout(activity);
         root.setBackgroundColor(Ui.BG);
+        // Permite que o ambiente receba o foco quando um campo de texto o deixa.
+        root.setFocusableInTouchMode(true);
 
         wallpaperView = new ImageView(activity);
         wallpaperView.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -747,7 +749,28 @@ final class Launcher {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             touchX = event.getX();
             touchY = event.getY();
+            releaseTextFocusOutside(touchX, touchY);
         }
+    }
+
+    /**
+     * Quando o utilizador toca fora do campo de texto que tem o foco, esse campo deixa de o ter:
+     * o cursor a piscar desaparece e o teclado fecha-se. Toques dentro da lista de sugestões ou
+     * da caixa de pesquisa mantêm o foco, para as sugestões continuarem a funcionar.
+     */
+    private void releaseTextFocusOutside(float x, float y) {
+        View focus = activity.getCurrentFocus();
+        if (!(focus instanceof EditText)) return;
+        int px = Math.round(x);
+        int py = Math.round(y);
+        if (rectOf(focus).contains(px, py)) return;
+        if (suggestBox.getVisibility() == View.VISIBLE && rectOf(suggestBox).contains(px, py)) return;
+
+        focus.clearFocus();
+        InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(focus.getWindowToken(), 0);
+        root.requestFocus();
+        if (!rectOf(searchBox).contains(px, py)) hideSuggest();
     }
 
     /* ---------- Menus ---------- */
