@@ -259,31 +259,4 @@ final class Ui {
         tile.addView(image, new FrameLayout.LayoutParams(dp(c, sizeDp), dp(c, sizeDp), Gravity.CENTER));
         return tile;
     }
-
-    /**
-     * Ajusta a altura de um painel ao seu conteúdo. A área com deslocamento (`content`) ocupa
-     * a altura desejada (`desiredPx`, ou WRAP_CONTENT para medir o conteúdo), mas nunca mais do
-     * que o painel pode ter (`maxPanelPx`). Se não couber, só essa área encolhe e passa a rolar.
-     * Deve ser chamada depois de o painel ter largura definida pelo launcher.
-     */
-    static void fitPanel(LinearLayout panel, View content, int desiredPx, int maxPanelPx) {
-        ViewGroup.LayoutParams params = content.getLayoutParams();
-        if (params == null) return;
-        if (params instanceof LinearLayout.LayoutParams) {
-            ((LinearLayout.LayoutParams) params).weight = 0;
-        }
-        params.height = desiredPx;
-        content.setLayoutParams(params);
-
-        int width = panel.getLayoutParams() != null ? panel.getLayoutParams().width : 0;
-        if (width <= 0) return;
-        panel.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
-        int total = panel.getMeasuredHeight();
-        if (total > maxPanelPx) {
-            int contentH = content.getMeasuredHeight() - (total - maxPanelPx);
-            params.height = Math.max(dp(panel.getContext(), 120), contentH);
-            content.setLayoutParams(params);
-        }
-    }
 }

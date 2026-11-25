@@ -58,6 +58,9 @@ final class ContextMenu {
             close();
             return true;
         });
+        // A elevação decide a ordem de desenho: o overlay tem de ficar acima de todos os painéis
+        // (que têm elevação 18 dp). Sem isto, o menu desenhava-se por trás dos painéis.
+        overlay.setElevation(dp(64));
         host.addView(overlay, new FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT));
 
         card = new LinearLayout(context);

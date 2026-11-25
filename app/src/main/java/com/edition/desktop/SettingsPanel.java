@@ -169,8 +169,6 @@ final class SettingsPanel {
             default: buildMain(); break;
         }
         launcher.refreshPointers();
-        // A altura acompanha o conteúdo; só a área de conteúdo rola quando não cabe no ecrã.
-        Ui.fitPanel(root, scroll, WRAP_CONTENT, launcher.panelMaxHeight());
     }
 
     /** Vista principal: as cinco categorias, cada uma com ícone colorido, nome e descrição. */

@@ -181,7 +181,7 @@ final class Launcher {
         suggestBox.setOrientation(LinearLayout.VERTICAL);
         suggestBox.setPadding(dp(6), dp(6), dp(6), dp(6));
         suggestBox.setBackground(Ui.box(Ui.MENU, dp(14), dp(1), Ui.STROKE));
-        suggestBox.setElevation(dp(12));
+        suggestBox.setElevation(dp(40));
         suggestBox.setClickable(true);
         suggestBox.setVisibility(View.GONE);
         root.addView(suggestBox, frame(WRAP_CONTENT, WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL));
@@ -445,7 +445,12 @@ final class Launcher {
         return Math.max(dp(340), Math.min(dp(560), proportional));
     }
 
-    /** Altura fixa do painel de aplicações: a mesma em todas as aberturas (máximo 620 dp). */
+    /** Largura única de todos os painéis: 360 dp, ou menos se o ecrã for estreito. */
+    private int panelWidth() {
+        return Math.min(dp(360), screenWidth() - dp(20));
+    }
+
+    /** Altura única de todos os painéis: 620 dp, ou o espaço disponível acima da barra. */
     private int appsHeight() {
         return Math.min(dp(620), panelMaxHeight());
     }
@@ -472,18 +477,20 @@ final class Launcher {
 
         // Os painéis crescem a partir da barra (para cima) e têm a altura do conteúdo.
         // Painel de aplicações: tamanho único (largura e altura fixas), não cresce com o conteúdo.
-        FrameLayout.LayoutParams apps = frame(Math.min(dp(340), width - dp(20)), appsHeight(),
+        // Os três painéis têm o mesmo tamanho: largura e altura iguais.
+        FrameLayout.LayoutParams apps = frame(panelWidth(), appsHeight(),
                 Gravity.START | Gravity.BOTTOM);
         apps.setMargins(gap, 0, 0, bar + gap);
         appsPanel.view().setLayoutParams(apps);
 
-        FrameLayout.LayoutParams notif = frame(Math.min(dp(340), width - dp(20)), WRAP_CONTENT,
+        FrameLayout.LayoutParams notif = frame(panelWidth(), appsHeight(),
                 Gravity.END | Gravity.BOTTOM);
         notif.setMargins(0, 0, gap, bar + gap);
         notificationPanel.view().setLayoutParams(notif);
 
-        FrameLayout.LayoutParams settings = frame(Math.min(dp(420), width - dp(24)), WRAP_CONTENT, Gravity.CENTER);
-        settings.setMargins(0, 0, 0, bar + dp(12));
+        FrameLayout.LayoutParams settings = frame(panelWidth(), appsHeight(),
+                Gravity.START | Gravity.BOTTOM);
+        settings.setMargins(gap, 0, 0, bar + gap);
         settingsPanel.view().setLayoutParams(settings);
 
         // As sugestões são posicionadas em positionSuggest(), junto à caixa de pesquisa.

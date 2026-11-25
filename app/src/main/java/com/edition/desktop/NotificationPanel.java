@@ -237,7 +237,8 @@ final class NotificationPanel {
         list = new LinearLayout(context);
         list.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(list);
-        root.addView(scroll, new LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT));
+        // A lista ocupa o espaço que sobra no painel de altura fixa, e rola quando há muitas.
+        root.addView(scroll, new LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f));
 
         // Pedido de acesso às notificações (só quando falta).
         permission = new LinearLayout(context);
@@ -316,8 +317,6 @@ final class NotificationPanel {
         countPill.setText(String.valueOf(items.size()));
         countPill.setVisibility(access && !items.isEmpty() ? View.VISIBLE : View.GONE);
 
-        // A lista ocupa o que precisa, até ao limite do ecrã; depois disso rola.
-        Ui.fitPanel(root, scroll, WRAP_CONTENT, launcher.panelMaxHeight());
     }
 
     /**
